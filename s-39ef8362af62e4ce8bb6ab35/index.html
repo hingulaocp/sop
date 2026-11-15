@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>NIT-185 Lead-wise SOP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* plan: a control-room ledger in two themes the viewer picks: White (paper-white, ink-black) and Black (true black, near-white text);
+     one ochre accent marks what can be changed; tables carry the page */
+  --paper: #ffffff; --surface: #ffffff; --ink: #111416; --muted: #575f66; --line: #d4d9dd; --head: #eef1f3; --accent: #a8560a; --accent-soft: #fbeedf;
+  --ok: #2c7a4b; --ok-soft: #e3f2e9; --bad: #b0281f; --bad-soft: #fbe4e2; --edit: #fff3cf;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-soft: #2e2113;
+    --ok: #6cc893; --ok-soft: #10261a; --bad: #ff8f85; --bad-soft: #331513; --edit: #2f2810; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-soft: #2e2113;
+  --ok: #6cc893; --ok-soft: #10261a; --bad: #ff8f85; --bad-soft: #331513; --edit: #2f2810; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--body); }
+body { padding: 0 16px 48px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: .01em; }
+h1 { font-size: 26px; font-weight: 700; }
+h2 { font-size: 19px; font-weight: 600; }
+h3 { font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 16px; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; padding: 20px 0 4px; }
+header.top .sub { color: var(--muted); font-size: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, select, input[type=text] { font: inherit; color: var(--ink); }
+button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--line); color: var(--ink); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.edit { background: var(--accent-soft); color: var(--accent); }
+nav.days { display: flex; flex-wrap: wrap; gap: 8px; }
+nav.days a { text-decoration: none; color: var(--ink); border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; display: grid; gap: 0; min-width: 92px; }
+nav.days a small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+nav.days a[aria-current="true"] { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+nav.days a b { font-family: var(--display); font-size: 16px; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
+nav.tabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 8px 12px; color: var(--muted); font-weight: 500; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 -2px 0 var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.card.daycard > .head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; }
+th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: right; vertical-align: top; }
+th { background: var(--head); font-family: var(--display); font-weight: 600; font-size: 13px; text-align: center; vertical-align: bottom; }
+td.l, th.l { text-align: left; }
+tr > td:first-child.l { white-space: nowrap; }
+tr.tot td { font-weight: 600; background: var(--head); }
+td.edited, tr.edited td { background: var(--edit); }
+td.miss { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+.note { color: var(--muted); font-size: 13px; max-width: 75ch; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.switch { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+select.slab { padding: 2px 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--surface); }
+input[type=text] { border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; width: 100%; min-width: 120px; background: var(--surface); }
+.sigs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.sig { border: 1px dashed var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 6px; }
+.sig .line { border-top: 1px solid var(--muted); padding-top: 4px; text-align: center; font-size: 13px; color: var(--muted); margin-top: 28px; }
+.sig .role { text-align: center; font-weight: 600; } .sig .org { text-align: center; font-size: 13px; }
+.pager { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.banner { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); }
+textarea.copy { width: 100%; min-height: 160px; font: 12px/1.4 ui-monospace, Menlo, monospace; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+.muted { color: var(--muted); }
+.themes { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.themes button { border: 0; border-radius: 0; padding: 7px 12px; background: var(--surface); }
+.themes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); font-weight: 600; }
+form.lock { max-width: 380px; }
+form.lock input[type=password] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.bad-text { color: var(--bad); margin: 0; font-weight: 600; }
+select:disabled, input:disabled { opacity: .75; }
+@media (max-width: 520px) { h1 { font-size: 22px; } nav.days a { min-width: 78px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="muted">Loading the reconciliation…</p></div>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="data.js"></script>
+<script src="data.enc.js"></script>
+<script src="compute.js"></script>
+<script src="xlsx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
