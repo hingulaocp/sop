@@ -128,7 +128,7 @@
     const tc = tot.map(fmt); tc.splice(2, 0, nK ? fmt(uK) : "—", nK ? pct(dK + uK ? uK / (dK + uK) : 0) : "—");
     rows += `<tr class="tot"><td class="l">TOTAL</td>${tc.map(x => `<td>${x}</td>`).join("")}</tr>`;
     return `<section class="card"><h2>Month so far</h2><div class="scroll"><table>${H([["Date", "l"], "Reported by contractor", "VTS designated", "VTS undesignated", "% undesignated", "GPS hauls accepted", "Trips given — justified", "FINAL TRIPS", "Difference (reported − final)", ...SL.map(s => "Final " + s)])}${rows}</table></div>
-      <p class="note">VTS designated / undesignated: NIT-185's own trips (Transporter AJANTHA-BLAPPL (JV)) in the VTS Trip List; % undesignated = undesignated ÷ (designated + undesignated), as in HQ's NIT Lead Report. — : that day's export had designated trips only (02–04.11); the TOTAL % is over the days where it is known.</p>
+      <p class="note">VTS designated / undesignated: NIT-185's own trips (Transporter AJANTHA-BLAPPL (JV)) in the VTS Trip List; % undesignated = undesignated ÷ (designated + undesignated), as in HQ's NIT Lead Report. — : that day's Trip List export had designated trips only; the TOTAL % is over the days where it is known.</p>
       <p class="note">Each day below in date order. Pick a day above to work on it alone; the Excel download follows your choice (one day, or all days with a Month sheet).</p></section>`;
   }
   function sopCard(D, r) {
