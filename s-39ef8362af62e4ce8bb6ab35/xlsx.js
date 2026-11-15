@@ -77,10 +77,13 @@
     r.B.forEach(b => { const q = add(ws, [SH[b.shift], ...b.slabs, b.total, b.ok ? "OK" : "MISMATCH"]); if (!b.ok) ws.getCell(q, 8).fill = RED; });
     r1 = add(ws, ["DAY TOTAL", ...r.Btot.slabs, r.Btot.total, r.Btot.ok ? "OK" : "MISMATCH"]); grid(ws, r0, 1, r1, 8, true);
     add(ws, []);
-    line(ws, "C.  For comparison: VTS designated trips by VTS distance slab (km)", { bold: true });
-    r0 = add(ws, ["Shift", ...SL, "Total"]);
-    r.C.forEach(c => add(ws, [SH[c.shift], ...c.slabs, c.total]));
-    r1 = add(ws, ["DAY TOTAL", ...r.Ctot.slabs, r.Ctot.total]); grid(ws, r0, 1, r1, 7, true);
+    line(ws, "C.  For comparison: VTS designated trips by VTS distance slab (km), and undesignated", { bold: true });
+    r0 = add(ws, ["Shift", ...SL, "Total", "VTS undesignated", "% undesignated (of designated + undesignated)"]); ws.getRow(r0).height = 45;
+    const uC = (u, p) => [u == null ? "—" : u, p == null ? "—" : p];
+    r.C.forEach(c => add(ws, [SH[c.shift], ...c.slabs, c.total, ...uC(c.und, c.pctUnd)]));
+    r1 = add(ws, ["DAY TOTAL", ...r.Ctot.slabs, r.Ctot.total, ...uC(r.Ctot.und, r.Ctot.pctUnd)]); grid(ws, r0, 1, r1, 9, true);
+    for (let q = r0 + 1; q <= r1; q++) ws.getCell(q, 9).numFmt = "0.0%";
+    line(ws, "VTS designated and undesignated trips of NIT-185 (Transporter " + data.contractor + ") from the VTS Trip List; % undesignated as in HQ's NIT Lead Report." + (r.Ctot.und == null ? " This day's Trip List export has DESIGNATED rows only, so undesignated is not known (—)." : ""));
     add(ws, []);
     line(ws, "D.  Lead-wise: contractor's reported trips against final trips", { bold: true });
     r0 = add(ws, ["Shift", ...SL.map(x => `${x} contractor`), ...SL.map(x => `${x} final`), ...SL.map(x => `${x} final − contractor`)]); ws.getRow(r0).height = 62;
@@ -144,12 +147,17 @@
       line(ws, `MAHANADI COALFIELDS LIMITED — ${data.site} — ${data.nit} ${data.contractor}`, { bold: true, size: 13 });
       line(ws, `Lead-wise reconciliation of OB tipper trips, ${dmy(res[0][0].day)} to ${dmy(res[res.length - 1][0].day)} (report day 05:00 → next day 05:00)`, { bold: true });
       add(ws, []);
-      const r0 = add(ws, ["Date", "Reported by contractor", "VTS designated", "GPS hauls accepted", "Under review (not counted)", "Trips given — justified", "FINAL TRIPS", "Difference (Reported − Final)", ...SL.map(x => `Final ${x}`)]);
+      const r0 = add(ws, ["Date", "Reported by contractor", "VTS designated", "VTS undesignated", "% undesignated", "GPS hauls accepted", "Under review (not counted)", "Trips given — justified", "FINAL TRIPS", "Difference (Reported − Final)", ...SL.map(x => `Final ${x}`)]);
       ws.getRow(r0).height = 45;
-      const tot = Array(13).fill(0);
-      res.forEach(([D, r]) => { const v = [r.Atot.reported, r.Atot.vts, r.Atot.gps, r.Atot.review, r.Atot.justified, r.Atot.final, r.Atot.diff, ...r.Btot.slabs]; v.forEach((x, i) => (tot[i] += x)); add(ws, [dmy(D.day), ...v]); });
-      const r1 = add(ws, ["TOTAL", ...tot]); grid(ws, r0, 1, r1, 13, true);
-      ws.getColumn(1).width = 12; for (let c = 2; c <= 13; c++) ws.getColumn(c).width = 12;
+      const tot = Array(7 + SL.length).fill(0); let dK = 0, uK = 0, nK = 0;
+      res.forEach(([D, r]) => { const v = [r.Atot.reported, r.Atot.vts, r.Atot.gps, r.Atot.review, r.Atot.justified, r.Atot.final, r.Atot.diff, ...r.Btot.slabs]; v.forEach((x, i) => (tot[i] += x));
+        const u = r.Ctot.und; if (u != null) { dK += r.Ctot.total; uK += u; nK++; }
+        const row = v.slice(); row.splice(2, 0, u == null ? "—" : u, r.Ctot.pctUnd == null ? "—" : r.Ctot.pctUnd); add(ws, [dmy(D.day), ...row]); });
+      const tr = tot.slice(); tr.splice(2, 0, nK ? uK : "—", nK ? (dK + uK ? uK / (dK + uK) : 0) : "—");
+      const r1 = add(ws, ["TOTAL", ...tr]); grid(ws, r0, 1, r1, 15, true);
+      for (let q = r0 + 1; q <= r1; q++) ws.getCell(q, 5).numFmt = "0.0%";
+      line(ws, "VTS designated / undesignated: NIT-185's own trips in the VTS Trip List; % undesignated = undesignated ÷ (designated + undesignated), as in HQ's NIT Lead Report; — : export had designated trips only. TOTAL % over the days where it is known.");
+      ws.getColumn(1).width = 12; for (let c = 2; c <= 15; c++) ws.getColumn(c).width = 12;
       landscape(ws, true);
     }
     for (const [D, r] of res) {

@@ -44,6 +44,7 @@
   const BYDAY = Object.fromEntries(DAYS.map(d => [d.day, d]));
   const esc = v => String(v === null || v === undefined ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const fmt = v => (v === null || v === undefined || v === "" ? "" : typeof v === "number" ? (Number.isInteger(v) ? v.toLocaleString("en-IN") : v.toFixed(3)) : esc(v));
+  const pct = p => (p == null ? "—" : (100 * p).toFixed(1) + "%");
   const dmy = X.dmy, ist = X.ist;
   const short = d => dmy(d).slice(0, 5);
   const now = () => { const d = new Date(); const p = n => String(n).padStart(2, "0"); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -117,13 +118,17 @@
   const H = a => head(a.map(x => (Array.isArray(x) ? x : [x])));
 
   function monthCard(R) {
-    let rows = "", tot = Array(12).fill(0);
+    let rows = "", tot = Array(6 + SL.length).fill(0), dK = 0, uK = 0, nK = 0;
     for (const [D, r] of R) {
       const v = [r.Atot.reported, r.Atot.vts, r.Atot.gps, r.Atot.justified, r.Atot.final, r.Atot.diff, ...r.Btot.slabs]; v.forEach((x, i) => (tot[i] += x));
-      rows += `<tr><td class="l"><a href="#d-${D.day}">${dmy(D.day)}</a></td>${v.map(fmt).map(x => `<td>${x}</td>`).join("")}</tr>`;
+      const u = r.Ctot.und; if (u != null) { dK += r.Ctot.total; uK += u; nK++; }
+      const cells = v.map(fmt); cells.splice(2, 0, u == null ? "—" : fmt(u), pct(r.Ctot.pctUnd));
+      rows += `<tr><td class="l"><a href="#d-${D.day}">${dmy(D.day)}</a></td>${cells.map(x => `<td>${x}</td>`).join("")}</tr>`;
     }
-    rows += `<tr class="tot"><td class="l">TOTAL</td>${tot.map(x => `<td>${fmt(x)}</td>`).join("")}</tr>`;
-    return `<section class="card"><h2>Month so far</h2><div class="scroll"><table>${H([["Date", "l"], "Reported by contractor", "VTS designated", "GPS hauls accepted", "Trips given — justified", "FINAL TRIPS", "Difference (reported − final)", ...SL.map(s => "Final " + s)])}${rows}</table></div>
+    const tc = tot.map(fmt); tc.splice(2, 0, nK ? fmt(uK) : "—", nK ? pct(dK + uK ? uK / (dK + uK) : 0) : "—");
+    rows += `<tr class="tot"><td class="l">TOTAL</td>${tc.map(x => `<td>${x}</td>`).join("")}</tr>`;
+    return `<section class="card"><h2>Month so far</h2><div class="scroll"><table>${H([["Date", "l"], "Reported by contractor", "VTS designated", "VTS undesignated", "% undesignated", "GPS hauls accepted", "Trips given — justified", "FINAL TRIPS", "Difference (reported − final)", ...SL.map(s => "Final " + s)])}${rows}</table></div>
+      <p class="note">VTS designated / undesignated: NIT-185's own trips (Transporter AJANTHA-BLAPPL (JV)) in the VTS Trip List; % undesignated = undesignated ÷ (designated + undesignated), as in HQ's NIT Lead Report. — : that day's export had designated trips only (02–04.11); the TOTAL % is over the days where it is known.</p>
       <p class="note">Each day below in date order. Pick a day above to work on it alone; the Excel download follows your choice (one day, or all days with a Month sheet).</p></section>`;
   }
   function sopCard(D, r) {
@@ -131,7 +136,7 @@
     const a = r.A.map(x => `<tr><td class="l">${SH[x.shift]}</td><td>${fmt(x.reported)}</td><td>${fmt(x.vts)}</td><td>${fmt(x.gps)}</td><td>${fmt(x.review)}</td><td>${fmt(x.noGpsRep)}</td><td>${fmt(x.justified)}</td><td><b>${fmt(x.final)}</b></td><td class="${x.diff < 0 ? "miss" : ""}">${fmt(x.diff)}</td></tr>`).join("");
     const t = r.Atot;
     const b = r.B.map(x => `<tr><td class="l">${SH[x.shift]}</td>${x.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(x.total)}</td><td>${x.ok ? '<span class="pill ok">OK</span>' : '<span class="pill bad">MISMATCH</span>'}</td></tr>`).join("");
-    const c = r.C.map(x => `<tr><td class="l">${SH[x.shift]}</td>${x.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(x.total)}</td></tr>`).join("");
+    const c = r.C.map(x => `<tr><td class="l">${SH[x.shift]}</td>${x.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(x.total)}</td><td>${x.und == null ? "—" : fmt(x.und)}</td><td>${pct(x.pctUnd)}</td></tr>`).join("");
     const d = r.D.map(x => `<tr><td class="l">${SH[x.shift]}</td>${[...x.con, ...x.fin].map(v => `<td>${fmt(v)}</td>`).join("")}${x.diff.map(v => `<td>${fmt(v)}</td>`).join("")}</tr>`).join("");
     return `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · SOP Daily Report</h2>
       <span><label class="switch"><input type="checkbox" data-act="justified" data-day="${D.day}" ${r.justifiedOn ? "checked" : ""}> Include trips given — justified</label>
@@ -142,7 +147,7 @@
       <tr class="tot"><td class="l">DAY TOTAL</td><td>${fmt(t.reported)}</td><td>${fmt(t.vts)}</td><td>${fmt(t.gps)}</td><td>${fmt(t.review)}</td><td>${fmt(t.noGpsRep)}</td><td>${fmt(t.justified)}</td><td>${fmt(t.final)}</td><td>${fmt(t.diff)}</td></tr></table></div>
       <h3>B. Final trips by lead slab (km), lower &lt; lead ≤ upper</h3>
       <div class="scroll"><table>${H([["Shift", "l"], ...SL, "Total", "Total = Final?"])}${b}<tr class="tot"><td class="l">DAY TOTAL</td>${r.Btot.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(r.Btot.total)}</td><td>${r.Btot.ok ? '<span class="pill ok">OK</span>' : '<span class="pill bad">MISMATCH</span>'}</td></tr></table></div>
-      <div class="grid2"><div><h3>C. VTS designated trips by VTS distance</h3><div class="scroll"><table>${H([["Shift", "l"], ...SL, "Total"])}${c}<tr class="tot"><td class="l">DAY TOTAL</td>${r.Ctot.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(r.Ctot.total)}</td></tr></table></div></div></div>
+      <div class="grid2"><div><h3>C. VTS designated trips by VTS distance, and undesignated</h3><div class="scroll"><table>${H([["Shift", "l"], ...SL, "Total", "VTS undesignated", "% undesignated"])}${c}<tr class="tot"><td class="l">DAY TOTAL</td>${r.Ctot.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(r.Ctot.total)}</td><td>${r.Ctot.und == null ? "—" : fmt(r.Ctot.und)}</td><td>${pct(r.Ctot.pctUnd)}</td></tr></table></div></div></div>
       <h3>D. Lead-wise: contractor's reported trips against final trips</h3>
       <div class="scroll"><table>${H([["Shift", "l"], ...SL.map(s => s + " contractor"), ...SL.map(s => s + " final"), ...SL.map(s => s + " final − contr.")])}${d}
       <tr class="tot"><td class="l">DAY TOTAL</td>${[...r.Dtot.con, ...r.Dtot.fin, ...r.Dtot.diff].map(v => `<td>${fmt(v)}</td>`).join("")}</tr></table></div>

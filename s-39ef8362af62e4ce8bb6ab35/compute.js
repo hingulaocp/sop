@@ -92,8 +92,11 @@
     const Bday = SL.map((_, i) => sum(B.map(r => r.slabs[i])));
     const Btot = { slabs: Bday, total: sum(Bday), ok: sum(Bday) === Atot.final };
 
-    const Cv = SHIFTS.map(s => ({ shift: s, slabs: D.vts[s].slice(), total: vtsShift[s] }));
+    // undesignated (HQ NIT Lead Report): null where the day's Trip List export had DESIGNATED rows only
+    const pctU = (d, u) => (u == null ? null : d + u > 0 ? u / (d + u) : 0);
+    const Cv = SHIFTS.map(s => { const u = D.vtsUnd ? D.vtsUnd[s] : null; return { shift: s, slabs: D.vts[s].slice(), total: vtsShift[s], und: u, pctUnd: pctU(vtsShift[s], u) }; });
     const Cday = SL.map((_, i) => sum(Cv.map(r => r.slabs[i])));
+    const undDay = D.vtsUnd ? sum(Cv.map(r => r.und)) : null;
 
     const cons = {}; SHIFTS.forEach(s => (cons[s] = zero()));
     for (const r of D.con) cons[r[C.shift]][SL.indexOf(r[C.slab] || "0-1")] += r[C.trips];
@@ -130,7 +133,7 @@
     }
     const forReview = counted.filter(t => t.lead > 5 && t.src === "gps").map(t => ({ ...t, why: "Lead over 5 km", countedTxt: "Yes, in 4-5" }))
       .concat(reviewLeft.map(r => ({ No: r[R.No], Shift: r[R.Shift], Fleet: r[R.Fleet], ld: r[R.ld], tp: r[R.tp], from: r[R.from], to: r[R.to], lead: r[R.lead], why: r[R.what], countedTxt: "No" })));
-    return { day: D.day, counted, register, cap, capBy, capShift, justifiedOn: on, A, Atot, B, Btot, C: Cv, Ctot: { slabs: Cday, total: sum(Cday) }, D: Dd, Dtot, tw, forReview, notCounted: ncLeft };
+    return { day: D.day, counted, register, cap, capBy, capShift, justifiedOn: on, A, Atot, B, Btot, C: Cv, Ctot: { slabs: Cday, total: sum(Cday), und: undDay, pctUnd: pctU(sum(Cday), undDay) }, D: Dd, Dtot, tw, forReview, notCounted: ncLeft };
   }
   const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPCompute = api;
