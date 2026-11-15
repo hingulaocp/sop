@@ -134,8 +134,9 @@
     const c = r.C.map(x => `<tr><td class="l">${SH[x.shift]}</td>${x.slabs.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(x.total)}</td></tr>`).join("");
     const d = r.D.map(x => `<tr><td class="l">${SH[x.shift]}</td>${[...x.con, ...x.fin].map(v => `<td>${fmt(v)}</td>`).join("")}${x.diff.map(v => `<td>${fmt(v)}</td>`).join("")}</tr>`).join("");
     return `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · SOP Daily Report</h2>
-      <label class="switch"><input type="checkbox" data-act="justified" data-day="${D.day}" ${r.justifiedOn ? "checked" : ""}> Include trips given — justified</label></div>
-      <p class="note">Report day 05:00 → next day 05:00. Final trips = GPS hauls accepted + trips given for tipper-shifts with no GPS data, capped at reported − GPS hauls (${fmt(r.cap)} this day).</p>
+      <span><label class="switch"><input type="checkbox" data-act="justified" data-day="${D.day}" ${r.justifiedOn ? "checked" : ""}> Include trips given — justified</label>
+      <label class="switch">Cap <select data-act="capby" data-day="${D.day}" aria-label="Cap on justified trips">${[["shift", "Per shift"], ["day", "Per day"], ["none", "No cap"]].map(([v, t]) => `<option value="${v}" ${r.capBy === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></span></div>
+      <p class="note">Report day 05:00 → next day 05:00. Final trips = GPS hauls accepted + trips given for tipper-shifts with no GPS data, ${r.capBy === "none" ? "given as reported (no cap)" : "capped at reported − GPS hauls " + (r.capBy === "shift" ? `of each shift (A ${fmt(r.capShift.A)} · B ${fmt(r.capShift.B)} · C ${fmt(r.capShift.C)}), and never above the day (${fmt(r.cap)})` : `of the day (${fmt(r.cap)}), filled A → B → C`)}.</p>
       <h3>A. Trips: contractor, VTS and GPS</h3>
       <div class="scroll"><table>${H([["Shift", "l"], "Reported by contractor", "VTS designated", "GPS hauls accepted", "Under review (not counted)", "No-GPS trips reported", "Trips given — justified", "FINAL TRIPS", "Difference (reported − final)"])}${a}
       <tr class="tot"><td class="l">DAY TOTAL</td><td>${fmt(t.reported)}</td><td>${fmt(t.vts)}</td><td>${fmt(t.gps)}</td><td>${fmt(t.review)}</td><td>${fmt(t.noGpsRep)}</td><td>${fmt(t.justified)}</td><td>${fmt(t.final)}</td><td>${fmt(t.diff)}</td></tr></table></div>
@@ -157,7 +158,7 @@
         <td><input type="text" aria-label="Bound register page" style="min-width:70px" data-act="jr-page" data-day="${D.day}" data-key="${esc(j.key)}" value="${esc(j.page)}" placeholder="Page"></td></tr>`;
     }).join("");
     const s = k => r.register.reduce((a, j) => a + j[k], 0);
-    return `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · Justification Register</h2><span class="note">Cap ${fmt(r.cap)} (reported − GPS hauls), filled A → B → C${r.justifiedOn ? "" : " · switched OFF for this day"}</span></div>
+    return `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · Justification Register</h2><span class="note">${r.capBy === "none" ? "No cap: the trips reported are given as they are" : r.capBy === "shift" ? `Cap per shift: A ${fmt(r.capShift.A)} · B ${fmt(r.capShift.B)} · C ${fmt(r.capShift.C)} (reported − GPS hauls of the shift; day ${fmt(r.cap)} at most)` : `Cap ${fmt(r.cap)} for the day (reported − GPS hauls), filled A → B → C`}${r.justifiedOn ? "" : " · switched OFF for this day"}</span></div>
       ${r.register.length ? `<div class="scroll"><table>${H(["Sl.", ["Shift", "l"], ["Fleet No", "l"], ["Reg No", "l"], "Reported", "GPS hauls", "Difference", "Trips included", "Slab", ["Reason", "l"], ["Justification", "l"], "Register page"])}${rows}
       <tr class="tot"><td class="l" colspan="4">TOTAL</td><td>${fmt(s("reported"))}</td><td>${fmt(s("gps"))}</td><td>${fmt(s("diff"))}</td><td>${fmt(s("included"))}</td><td colspan="4"></td></tr></table></div>` : `<p class="muted">No trip was given on justification on this day.</p>`}
       <p class="note">Slab defaults to 0–1. Choose another and the SOP Daily Report follows. Only technical mismatches may be included (SOP 7).</p>
@@ -193,7 +194,8 @@
     const body = rows.map(t => `<tr>${isAll() ? `<td class="l">${short(t.day)}</td>` : ""}<td class="l">${t.shift}</td><td class="l">${esc(t.fleet)}</td><td>${fmt(t.rep)}</td><td>${t.repLead === null ? "" : t.repLead.toFixed(2)}</td><td>${esc(t.repSlab || "")}</td><td>${fmt(t.gps)}</td>
       <td class="l">${esc(t.bySlab)}</td><td>${t.gpsLead === null ? "" : t.gpsLead.toFixed(2)}</td><td class="${t.diff < 0 ? "miss" : ""}">${fmt(t.diff)}</td><td class="l">${esc(t.chk)}</td><td class="l note">${esc(t.rem)}</td></tr>`).join("");
     return `<section class="card"><h2>Tipper-wise${isAll() ? ", all days" : " · " + dmy(sel()[0].day)}</h2>
-      <div class="scroll"><table>${H([...(isAll() ? [["Date", "l"]] : []), ["Shift", "l"], ["Tipper", "l"], "Reported", "Reported lead", "Reported slab", "GPS trips", ["GPS by slab", "l"], "GPS lead (median)", "Reported − GPS", ["Slab check", "l"], ["Remark", "l"]])}${body}</table></div></section>`;
+      <div class="scroll"><table>${H([...(isAll() ? [["Date", "l"]] : []), ["Shift", "l"], ["Tipper", "l"], "Reported", "Reported lead", "Reported slab", "GPS trips", ["GPS by slab", "l"], "GPS lead (median)", "Reported − GPS", ["Slab check", "l"], ["Remark", "l"]])}${body}
+      <tr class="tot"><td class="l" colspan="${isAll() ? 3 : 2}">TOTAL (${fmt(rows.length)} tipper-shifts)</td><td>${fmt(rows.reduce((a, t) => a + t.rep, 0))}</td><td></td><td></td><td>${fmt(rows.reduce((a, t) => a + t.gps, 0))}</td><td></td><td></td><td>${fmt(rows.reduce((a, t) => a + t.diff, 0))}</td><td colspan="2" class="l note">Reported − GPS is 0 for no-GPS tipper-shifts (their trips are in the Justification Register)</td></tr></table></div></section>`;
   }
   function revCard(R, which) {
     const N = S.N;
@@ -250,6 +252,7 @@
     app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); }));
     const on = (sel, ev, fn) => app.querySelectorAll(sel).forEach(el => el.addEventListener(ev, () => fn(el)));
     on('[data-act="justified"]', "change", el => change(["days", el.dataset.day, "justified"], el.checked ? undefined : false, `${short(el.dataset.day)}: trips given — justified ${el.checked ? "included" : "switched off"}`, el.dataset.day));
+    on('[data-act="capby"]', "change", el => change(["days", el.dataset.day, "cap"], el.value === "shift" ? undefined : el.value, `${short(el.dataset.day)}: justified trips ${el.value === "none" ? "as reported (no cap)" : "capped per " + el.value}`, el.dataset.day));
     on('[data-act="jr-slab"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "slab"], el.value === "0-1" ? undefined : el.value, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: justified trips in slab ${el.value}`, el.dataset.day));
     on('[data-act="jr-just"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "just"], el.value.trim() || undefined, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: justification “${el.value.trim()}”`, el.dataset.day));
     on('[data-act="jr-page"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "page"], el.value.trim() || undefined, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: bound register page ${el.value.trim()}`, el.dataset.day));

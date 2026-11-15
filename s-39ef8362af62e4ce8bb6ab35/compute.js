@@ -18,7 +18,7 @@
   const C = { shift: 0, fleet: 1, reg: 2, trips: 3, lead: 4, sl: 5, noGps: 6, pts: 7, slab: 8 };
   const jrKey = (s, f) => s + "|" + f;
 
-  /* edits for one day: { justified: true|false, jr: {"A|AV 58": {slab, just, page}}, trips: {"No": {count: true|false, slab, remark}} } */
+  /* edits for one day: { justified: true|false, cap: "shift"|"day"|"none" (none: the trips reported, as they are), jr: {"A|AV 58": {slab, just, page}}, trips: {"No": {count: true|false, slab, remark}} } */
   function computeDay(D, E) {
     E = E || {};
     const te = E.trips || {};
@@ -59,14 +59,19 @@
     const gpsDay = sum(SHIFTS.map(s => gpsShift[s]));
 
     // Justification Register: tipper-shifts with no GPS data (as found by the pipeline), in shift order A → B → C; the day cap is filled in this order
+    // cap per shift (default, Aj 16.11: a shift never gets more than reported − its GPS hauls) or per day (the earlier rule); edit "cap"
     const on = E.justified !== false;
-    const cap = Math.max(0, repDay - gpsDay);
+    const capBy = E.cap || D.capDefault || "shift";
+    const capShift = {}; SHIFTS.forEach(s => (capShift[s] = Math.max(0, repShift[s] - gpsShift[s])));
+    const capDay = Math.max(0, repDay - gpsDay);
+    const cap = capBy === "none" ? null : capBy === "day" ? capDay : Math.min(capDay, sum(SHIFTS.map(s => capShift[s])));   // per shift: the day limit holds as well
     const jre = E.jr || {};
-    let used = 0;
+    let used = 0; const usedS = { A: 0, B: 0, C: 0 };
     const register = D.con.filter(r => r[C.noGps]).map((r, i) => {
       const k = jrKey(r[C.shift], r[C.fleet]); const e = jre[k] || {};
       const g = (byTS.get(r[C.fleet] + "|" + r[C.shift]) || []).length;
-      const inc = on ? Math.max(0, Math.min(r[C.trips], cap - used)) : 0; used += inc;
+      const room = capBy === "none" ? Infinity : capBy === "day" ? capDay - used : Math.min(capShift[r[C.shift]] - usedS[r[C.shift]], capDay - used);
+      const inc = on ? Math.max(0, Math.min(r[C.trips], room)) : 0; used += inc; usedS[r[C.shift]] += inc;
       return { sl: i + 1, key: k, shift: r[C.shift], fleet: r[C.fleet], reg: r[C.reg], reported: r[C.trips], gps: g, diff: r[C.trips] - g, included: inc,
         slab: e.slab || "0-1", reason: `No GPS data from the device for the shift (${r[C.pts]} valid GPS points) — technical`, just: e.just || "", page: e.page || "" };
     });
@@ -117,7 +122,7 @@
       tw.push({ shift: r[C.shift], fleet: r[C.fleet], rep: r[C.trips], repLead: r[C.lead], repSlab: cs, gps: a.length, bySlab: SL.filter(x => by[x]).map(x => `${x}: ${by[x]}`).join(" · "),
         gpsLead: a.length ? median(a.map(t => t.lead).filter(x => x !== null)) : null, diff: r[C.noGps] ? 0 : r[C.trips] - a.length, chk, rem });
     }
-    for (const [k, a] of byTS) {
+    for (const [k, a] of [...byTS].sort((x, y) => { const [f1, s1] = x[0].split("|"), [f2, s2] = y[0].split("|"); return f1 < f2 ? -1 : f1 > f2 ? 1 : s1 < s2 ? -1 : s1 > s2 ? 1 : 0; })) {   // fleet, then shift: the workbook's order
       if (seen.has(k)) continue;
       const [f, s] = k.split("|"); const by = {}; a.forEach(t => (by[t.slab] = (by[t.slab] || 0) + 1));
       tw.push({ shift: s, fleet: f, rep: 0, repLead: null, repSlab: null, gps: a.length, bySlab: SL.filter(x => by[x]).map(x => `${x}: ${by[x]}`).join(" · "),
@@ -125,7 +130,7 @@
     }
     const forReview = counted.filter(t => t.lead > 5 && t.src === "gps").map(t => ({ ...t, why: "Lead over 5 km", countedTxt: "Yes, in 4-5" }))
       .concat(reviewLeft.map(r => ({ No: r[R.No], Shift: r[R.Shift], Fleet: r[R.Fleet], ld: r[R.ld], tp: r[R.tp], from: r[R.from], to: r[R.to], lead: r[R.lead], why: r[R.what], countedTxt: "No" })));
-    return { day: D.day, counted, register, cap, justifiedOn: on, A, Atot, B, Btot, C: Cv, Ctot: { slabs: Cday, total: sum(Cday) }, D: Dd, Dtot, tw, forReview, notCounted: ncLeft };
+    return { day: D.day, counted, register, cap, capBy, capShift, justifiedOn: on, A, Atot, B, Btot, C: Cv, Ctot: { slabs: Cday, total: sum(Cday) }, D: Dd, Dtot, tw, forReview, notCounted: ncLeft };
   }
   const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPCompute = api;

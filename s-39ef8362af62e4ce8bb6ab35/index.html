@@ -13,7 +13,7 @@
 :root {
   /* plan: a control-room ledger in two themes the viewer picks: White (paper-white, ink-black) and Black (true black, near-white text);
      one ochre accent marks what can be changed; tables carry the page */
-  --paper: #ffffff; --surface: #ffffff; --ink: #111416; --muted: #575f66; --line: #d4d9dd; --head: #eef1f3; --accent: #a8560a; --accent-soft: #fbeedf;
+  --paper: #ffffff; --surface: #ffffff; --ink: #111416; --muted: #575f66; --line: #d4d9dd; --head: #eef1f3; --accent: #a8560a; --accent-ink: #ffffff; --accent-soft: #fbeedf;
   --ok: #2c7a4b; --ok-soft: #e3f2e9; --bad: #b0281f; --bad-soft: #fbe4e2; --edit: #fff3cf;
   --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -21,12 +21,12 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-soft: #2e2113;
+    --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-ink: #000000; --accent-soft: #2e2113;
     --ok: #6cc893; --ok-soft: #10261a; --bad: #ff8f85; --bad-soft: #331513; --edit: #2f2810; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-soft: #2e2113;
+  --paper: #000000; --surface: #0b0c0d; --ink: #f1f3f4; --muted: #a3abb1; --line: #2c3135; --head: #16191b; --accent: #f09a43; --accent-ink: #000000; --accent-soft: #2e2113;
   --ok: #6cc893; --ok-soft: #10261a; --bad: #ff8f85; --bad-soft: #331513; --edit: #2f2810; color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -43,7 +43,7 @@ header.top .sub { color: var(--muted); font-size: 14px; }
 button, select, input[type=text] { font: inherit; color: var(--ink); }
 button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
 button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--line); color: var(--ink); white-space: nowrap; }
