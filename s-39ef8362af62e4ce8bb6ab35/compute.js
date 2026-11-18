@@ -138,8 +138,7 @@
   // ---------- contractor's Trip Reconciliation format (Ajantha, 18.11.2026): slabs 0-1 … 8-9 km, per shift + day total.
   // Designated / Undesignated: the portal's trips on the portal's own lead (VTS = nitReport), shift by start time; Contractor Reported: each
   // tipper-shift in the slab of its reported lead; % Deviation w.r.t Reported: the contractor's formula (Reported − Total) × 100 ÷ Total,
-  // "–" where Total is 0; Final after Reconciliation: the SOP's final trips by slab of this page (GPS hauls on the full-run lead + trips
-  // given on justification), so the page's edits carry through; GPS hauls: internal only. Remarks say how VTS trips turn into the final.
+  // "–" where Total is 0; Final after Reconciliation: reconFinal below; GPS hauls: internal only. Remarks say how VTS trips turn into the final.
   const RSL = ["0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "8-9"];
   const sum = a => a.reduce((x, y) => x + y, 0);
   const pad = a => RSL.map((_, i) => a[i] || 0);
@@ -151,17 +150,29 @@
   }
   function addRec(a, b) { const o = {}; for (const k of ["des", "und", "rep", "gps"]) o[k] = a[k].map((v, i) => v + b[k][i]); o.rem = {}; for (const k in b.rem) o.rem[k] = (a.rem[k] || 0) + b.rem[k]; return o; }
   const emptyRec = () => ({ des: RSL.map(() => 0), und: RSL.map(() => 0), rep: RSL.map(() => 0), gps: RSL.map(() => 0), rem: {} });
+  // Final after Reconciliation (Aj 19.11.2026, 02:03): the GPS hauls counted on the page in the slab of the HAUL's lead (0-1 … 8-9; a trip
+  // whose slab was changed on the page keeps that slab), plus the trips given on justification (no GPS data) in the slab of the contractor's
+  // reported lead for that tipper-shift.
+  const rslab = x => (x === null || x === undefined || Number.isNaN(x) ? 0 : x <= 1 ? 0 : Math.min(RSL.length - 1, Math.ceil(x) - 1));
+  function reconFinal(D, r) {
+    const f = {}; SHIFTS.forEach(s => (f[s] = RSL.map(() => 0)));
+    for (const t of r.counted) { const auto = slab(t.lead); const i = t.slab && t.slab !== auto ? RSL.indexOf(t.slab) : rslab(t.lead); f[t.Shift][i < 0 ? 0 : i] += 1; }
+    for (const g of r.register) { if (!g.included) continue;
+      const c = D.con.find(x => x[C.shift] === g.shift && x[C.fleet] === g.fleet); f[g.shift][rslab(c ? c[C.lead] : null)] += g.included; }
+    return f;
+  }
   function reconDay(D, r) {
     if (!D.recon) return null;
-    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], r.B[i].slabs, r.A[i].justified));
+    const f = reconFinal(D, r);
+    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], f[s], r.A[i].justified));
     const t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), emptyRec());
-    blocks.push(reconBlock("Day", t, r.Btot.slabs, r.Atot.justified));
+    blocks.push(reconBlock("Day", t, RSL.map((_, i) => sum(SHIFTS.map(s => f[s][i]))), r.Atot.justified));
     return blocks;
   }
   function reconPeriod(list) {   // list of [D, r]: one total block over the days
     const ok = list.filter(([D]) => D.recon); if (!ok.length) return null;
     let t = emptyRec(), fin = RSL.map(() => 0), just = 0;
-    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); r.Btot.slabs.forEach((v, i) => (fin[i] += v)); just += r.Atot.justified; }
+    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); const f = reconFinal(D, r); SHIFTS.forEach(s => f[s].forEach((v, i) => (fin[i] += v))); just += r.Atot.justified; }
     return reconBlock("Total", t, fin, just);
   }
   function reconRemark(b) {
@@ -171,7 +182,7 @@
     if (m.split) p.push(`${m.split} VTS trip(s) were part of a haul already counted (haul split in two): counted once`);
     if (m.notHaul) p.push(`${m.notHaul} VTS trip(s) (${m.notHaulUnd || 0} undesignated) are short moves, not hauls: not counted`);
     if (m.noVts) p.push(`${m.noVts} haul(s) with no VTS trip: added`);
-    if (m.just) p.push(`${m.just} trip(s) given on justification (no GPS data): see the Justification Register`);
+    if (m.just) p.push(`${m.just} trip(s) given on justification (no GPS data), in the contractor's reported slab: see the Justification Register`);
     p.push(`Reported − Final: ${b.sums.rep - b.sums.fin}`);
     return p.join("; ");
   }
