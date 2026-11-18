@@ -135,6 +135,46 @@
       .concat(reviewLeft.map(r => ({ No: r[R.No], Shift: r[R.Shift], Fleet: r[R.Fleet], ld: r[R.ld], tp: r[R.tp], from: r[R.from], to: r[R.to], lead: r[R.lead], why: r[R.what], countedTxt: "No" })));
     return { day: D.day, counted, register, cap, capBy, capShift, justifiedOn: on, A, Atot, B, Btot, C: Cv, Ctot: { slabs: Cday, total: sum(Cday), und: undDay, pctUnd: pctU(sum(Cday), undDay) }, D: Dd, Dtot, tw, forReview, notCounted: ncLeft };
   }
-  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C };
+  // ---------- contractor's Trip Reconciliation format (Ajantha, 18.11.2026): slabs 0-1 … 8-9 km, per shift + day total.
+  // Designated / Undesignated: the portal's trips on the portal's own lead (VTS = nitReport), shift by start time; Contractor Reported: each
+  // tipper-shift in the slab of its reported lead; % Deviation w.r.t Reported: the contractor's formula (Reported − Total) × 100 ÷ Total,
+  // "–" where Total is 0; Final after Reconciliation: the SOP's final trips by slab of this page (GPS hauls on the full-run lead + trips
+  // given on justification), so the page's edits carry through; GPS hauls: internal only. Remarks say how VTS trips turn into the final.
+  const RSL = ["0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "8-9"];
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const pad = a => RSL.map((_, i) => a[i] || 0);
+  const dev = (rep, tot) => (tot ? Math.round((rep - tot) * 100 / tot * 100) / 100 : null);
+  function reconBlock(label, x, fin, just) {
+    const tot = x.des.map((v, i) => v + x.und[i]);
+    return { label, des: x.des, und: x.und, tot, rep: x.rep, dev: x.rep.map((v, i) => dev(v, tot[i])), fin: pad(fin), gps: x.gps, rem: Object.assign({ just }, x.rem),
+      sums: { des: sum(x.des), und: sum(x.und), tot: sum(tot), rep: sum(x.rep), fin: sum(fin), gps: sum(x.gps) } };
+  }
+  function addRec(a, b) { const o = {}; for (const k of ["des", "und", "rep", "gps"]) o[k] = a[k].map((v, i) => v + b[k][i]); o.rem = {}; for (const k in b.rem) o.rem[k] = (a.rem[k] || 0) + b.rem[k]; return o; }
+  const emptyRec = () => ({ des: RSL.map(() => 0), und: RSL.map(() => 0), rep: RSL.map(() => 0), gps: RSL.map(() => 0), rem: {} });
+  function reconDay(D, r) {
+    if (!D.recon) return null;
+    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], r.B[i].slabs, r.A[i].justified));
+    const t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), emptyRec());
+    blocks.push(reconBlock("Day", t, r.Btot.slabs, r.Atot.justified));
+    return blocks;
+  }
+  function reconPeriod(list) {   // list of [D, r]: one total block over the days
+    const ok = list.filter(([D]) => D.recon); if (!ok.length) return null;
+    let t = emptyRec(), fin = RSL.map(() => 0), just = 0;
+    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); r.Btot.slabs.forEach((v, i) => (fin[i] += v)); just += r.Atot.justified; }
+    return reconBlock("Total", t, fin, just);
+  }
+  function reconRemark(b) {
+    const m = b.rem, p = [];
+    if (m.raised) p.push(`${m.raised} trip(s) cut at a terminal boundary (loading or tipping outside the VTS terminal): placed in the slab of the full haul`);
+    if (m.lowered) p.push(`${m.lowered} trip(s) in a lower slab (lead measured to the actual loading / tip place)`);
+    if (m.split) p.push(`${m.split} VTS trip(s) were part of a haul already counted (haul split in two): counted once`);
+    if (m.notHaul) p.push(`${m.notHaul} VTS trip(s) (${m.notHaulUnd || 0} undesignated) are short moves, not hauls: not counted`);
+    if (m.noVts) p.push(`${m.noVts} haul(s) with no VTS trip: added`);
+    if (m.just) p.push(`${m.just} trip(s) given on justification (no GPS data): see the Justification Register`);
+    p.push(`Reported − Final: ${b.sums.rep - b.sums.fin}`);
+    return p.join("; ");
+  }
+  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C, RSL, reconDay, reconPeriod, reconRemark };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPCompute = api;
 })(typeof self !== "undefined" ? self : this);

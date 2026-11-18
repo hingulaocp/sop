@@ -187,6 +187,45 @@
     M.getColumn(1).width = 140;
     return wb;
   }
-  const api = { buildWorkbook, DEFAULT_SIGN, dmy, ist };
+  // the contractor's Trip Reconciliation format (Ajantha, 18.11.2026), one sheet: per day shift A, B, C and the day, then the period total.
+  // Total, % Deviation (their formula, wrapped in IFERROR) are Excel formulas; GPS hauls only when opts.gps (internal — not for sending).
+  function buildReconWorkbook(ExcelJS, data, days, edits, opts) {
+    opts = opts || {}; edits = edits || {};
+    const wb = new ExcelJS.Workbook(); wb.creator = "Lead-wise SOP"; wb.created = new Date();
+    const ws = wb.addWorksheet("Trip Reconciliation"), RSL = S.RSL, nS = RSL.length, cS = 6, cR = cS + nS;   // F … N slabs, O remarks
+    const res = days.map(D => [D, S.computeDay(D, (edits.days || {})[D.day])]).filter(([D]) => D.recon);
+    add(ws, ["Name of the Mine", "NIT-No. ", "Contractor", "Date/Shift", "Trips", "Lead Distance (in Km)", ...Array(nS - 1).fill(null), "Remarks"]);
+    add(ws, [null, null, null, null, null, ...RSL, null]);
+    ws.mergeCells(1, cS, 1, cS + nS - 1); [1, 2, 3, 4, 5, cR].forEach(c => ws.mergeCells(1, c, 2, c));
+    grid(ws, 1, 1, 2, cR, false); for (let c = 1; c <= cR; c++) ws.getCell(2, c).font = { bold: true };
+    const L = c => ws.getColumn(c).letter;
+    const block = (dateTxt, b) => {
+      const rows = [["Designated", b.des], ["Undesignated", b.und], ["Total Designated + Undesignated", null], ["Contractor Reported", b.rep], ["% Deviation w.r.t Reported", null], ["Final after Reconciliation", b.fin]];
+      if (opts.gps) rows.push(["GPS hauls (internal)", b.gps]);
+      const r0 = ws.rowCount + 1;
+      rows.forEach(([lab, v], k) => {
+        const r = r0 + k, row = ws.getRow(r); row.getCell(5).value = lab;
+        for (let i = 0; i < nS; i++) { const c = cS + i, col = L(c);
+          if (lab.startsWith("Total")) row.getCell(c).value = { formula: `${col}${r0}+${col}${r0 + 1}`, result: b.tot[i] };
+          else if (lab.startsWith("%")) row.getCell(c).value = { formula: `IFERROR(ROUND((${col}${r0 + 3}-${col}${r0 + 2})*100/${col}${r0 + 2},2),"-")`, result: b.dev[i] === null ? "-" : b.dev[i] };
+          else row.getCell(c).value = v[i]; }
+        if (lab.startsWith("Total") || lab.startsWith("Final")) row.eachCell({ includeEmpty: true }, x => { if (x.col >= 5 && x.col < cR) x.font = { bold: true }; });
+        if (lab.startsWith("GPS")) for (let c = 5; c < cR; c++) ws.getCell(r, c).fill = YEL;
+      });
+      const r1 = r0 + rows.length - 1;
+      ws.getCell(r0, 1).value = data.site; ws.getCell(r0, 2).value = data.nit; ws.getCell(r0, 3).value = data.contractor; ws.getCell(r0, 4).value = dateTxt;
+      ws.getCell(r0, cR).value = S.reconRemark(b);
+      [1, 2, 3, 4, cR].forEach(c => { ws.mergeCells(r0, c, r1, c); ws.getCell(r0, c).alignment = { vertical: "middle", horizontal: c === cR ? "left" : "center", wrapText: true }; });
+      for (let r = r0; r <= r1; r++) for (let c = 1; c <= cR; c++) ws.getCell(r, c).border = BOX;
+    };
+    for (const [D, r] of res) { const bl = S.reconDay(D, r); bl.forEach(b => block(b.label === "Day" ? `${dmy(D.day)} — Day` : `${dmy(D.day)} / ${b.label}`, b)); }
+    if (res.length > 1) block(`${dmy(res[0][0].day)} to ${dmy(res[res.length - 1][0].day)} — Total`, S.reconPeriod(res));
+    add(ws, []);
+    line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: hauls on the GPS track on the full-run lead (HQ formula at the actual loading and tip places), plus trips given on justification for tipper-shifts with no GPS data.", { merge: cR, h: 60 });
+    [16, 9, 20, 14, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w)); for (let i = 0; i < nS; i++) ws.getColumn(cS + i).width = 8; ws.getColumn(cR).width = 70;
+    ws.views = [{ state: "frozen", ySplit: 2, xSplit: 5 }]; landscape(ws, false, "1:2");
+    return wb;
+  }
+  const api = { buildWorkbook, buildReconWorkbook, DEFAULT_SIGN, dmy, ist };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPXlsx = api;
 })(typeof self !== "undefined" ? self : this);

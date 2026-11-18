@@ -52,6 +52,7 @@
   // ---------- state
   let E = { v: 1, sign: { show: true, blocks: X.DEFAULT_SIGN.map(b => ({ ...b })) }, days: {}, log: [] };
   let saved = JSON.stringify(E);
+  let showGps = false;   // Reconciliation tab: GPS hauls row (internal, hidden before sending)
   let tab = "sop", page = 0, filt = { q: "", shift: "", slab: "", edited: false };
   let caps = { artifact: null, downloads: null }, readOnly = false, busy = false, lastCopy = "";
   const dirty = () => JSON.stringify(E) !== saved;
@@ -96,9 +97,10 @@
       h += `<a href="#d-${D.day}" aria-current="${!isAll() && days[0].day === D.day}"><b>${short(D.day)}${ed ? ' <span class="pill edit" title="changed on this page">edited</span>' : ""}</b><small>${fmt(r.Atot.final)} final · ${fmt(r.Atot.diff)} short</small></a>`;
     }
     h += `</nav>`;
-    const tabs = [["sop", "SOP Daily Report"], ["just", "Justification Register"], ["trips", "Trips"], ["tw", "Tipper-wise"], ["rev", "For review"], ["nc", "Not counted"], ["sign", "Signatures"], ["chg", `Changes${nChanges ? " (" + nChanges + ")" : ""}`]];
+    const tabs = [["sop", "SOP Daily Report"], ["rec", "Reconciliation"], ["just", "Justification Register"], ["trips", "Trips"], ["tw", "Tipper-wise"], ["rev", "For review"], ["nc", "Not counted"], ["sign", "Signatures"], ["chg", `Changes${nChanges ? " (" + nChanges + ")" : ""}`]];
     h += `<nav class="tabs" role="tablist">${tabs.map(([k, t]) => `<button role="tab" id="t-${k}" aria-selected="${tab === k}" data-tab="${k}">${t}</button>`).join("")}</nav>`;
     if (tab === "sop") h += (isAll() ? monthCard(R) : "") + R.map(([D, r]) => sopCard(D, r)).join("");
+    else if (tab === "rec") h += reconCard(R);
     else if (tab === "just") h += R.map(([D, r]) => justCard(D, r)).join("");
     else if (tab === "trips") h += tripsCard(R);
     else if (tab === "tw") h += twCard(R);
@@ -117,6 +119,31 @@
   const head = cols => `<tr>${cols.map(c => `<th${c[1] ? ` class="${c[1]}"` : ""}>${esc(c[0] || c)}</th>`).join("")}</tr>`;
   const H = a => head(a.map(x => (Array.isArray(x) ? x : [x])));
 
+  // contractor's Trip Reconciliation format (Ajantha, 18.11.2026) — see compute.js reconDay
+  function reconCard(R) {
+    const RSL = S.RSL, ok = R.filter(([D]) => D.recon);
+    const top = `<section class="card"><div class="row" style="justify-content:space-between"><h2>Trip Reconciliation — contractor's format</h2>
+      <div class="actions"><label class="switch" style="font-weight:500"><input type="checkbox" id="rec-gps" ${showGps ? "checked" : ""}> Show GPS hauls (internal — not for sending)</label>
+      <button class="primary" id="b-dl-rec">Download reconciliation · ${R.length > 1 ? "all days" : short(R[0][0].day)}${showGps ? " (with GPS hauls)" : ""}</button></div></div>
+      <p class="note">${esc(DATA.site)} · ${esc(DATA.nit)} · ${esc(DATA.contractor)}. Designated / Undesignated: the VTS portal's trips on the portal's own lead (NIT lead report), shift by trip start. Contractor Reported: each tipper-shift in the slab of its reported lead. % Deviation w.r.t Reported = (Reported − Total) × 100 ÷ Total. Final after Reconciliation: hauls on the GPS track on the full-run lead plus trips given on justification — the SOP figures of this page, so changes made here carry through. Slab: lower &lt; lead ≤ upper.</p>
+      ${ok.length < R.length ? `<p class="note">No VTS Trip List for: ${R.filter(([D]) => !D.recon).map(([D]) => dmy(D.day)).join(", ")}.</p>` : ""}</section>`;
+    const rowsOf = b => {
+      const L = [["Designated", b.des, ""], ["Undesignated", b.und, ""], ["Total Designated + Undesignated", b.tot, "tot"], ["Contractor Reported", b.rep, ""],
+        ["% Deviation w.r.t Reported", b.dev.map(v => (v === null ? "–" : v.toFixed(2))), ""], ["Final after Reconciliation", b.fin, "tot"]];
+      if (showGps) L.push(["GPS hauls (internal)", b.gps, "gps"]);
+      return L;
+    };
+    const table = (title, blocks) => {
+      let body = "";
+      for (const b of blocks) { const L = rowsOf(b);
+        L.forEach(([lab, v, cls], k) => { body += `<tr class="${cls === "tot" ? "tot" : ""}" ${cls === "gps" ? 'style="background:var(--edit)"' : ""}>${k === 0 ? `<td class="l" rowspan="${L.length}"><b>${esc(b.label === "Day" ? "Day" : b.label === "Total" ? "Total" : "Shift " + b.label)}</b></td>` : ""}<td class="l">${lab}</td>${v.map(x => `<td>${typeof x === "string" ? x : fmt(x)}</td>`).join("")}${k === 0 ? `<td class="l note" rowspan="${L.length}" style="min-width:300px">${esc(S.reconRemark(b))}</td>` : ""}</tr>`; }); }
+      return `<section class="card"><h2>${title}</h2><div class="scroll"><table>${H([["Date/Shift", "l"], ["Trips", "l"], ...RSL, ["Remarks", "l"]])}${body}</table></div></section>`;
+    };
+    let h = top;
+    if (ok.length > 1) h += table(`Total ${dmy(ok[0][0].day)} to ${dmy(ok[ok.length - 1][0].day)}`, [S.reconPeriod(ok)]);
+    for (const [D, r] of ok) h += table(dmy(D.day), S.reconDay(D, r));
+    return h;
+  }
   function monthCard(R) {
     let rows = "", tot = Array(6 + SL.length).fill(0), dK = 0, uK = 0, nK = 0;
     for (const [D, r] of R) {
@@ -249,12 +276,12 @@
   function bind() {
     bindTheme(render);
     if (VIEW) {
-      app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); }));
+      app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); })); bindRecon();
       app.querySelectorAll('[data-act]').forEach(el => { if (el.dataset.act === "pg") el.addEventListener("click", () => { page = Number(el.dataset.p); render(); }); else if (el.tagName === "BUTTON") el.remove(); else el.disabled = true; });
       ["f-q", "f-shift", "f-slab", "f-ed"].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener("change", () => { filt.q = (document.getElementById("f-q") || {}).value || ""; filt.shift = (document.getElementById("f-shift") || {}).value || ""; filt.slab = (document.getElementById("f-slab") || {}).value || ""; filt.edited = !!(document.getElementById("f-ed") || {}).checked; page = 0; render(); }); });
       document.getElementById("b-dl").addEventListener("click", download); return;
     }
-    app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); }));
+    app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); })); bindRecon();
     const on = (sel, ev, fn) => app.querySelectorAll(sel).forEach(el => el.addEventListener(ev, () => fn(el)));
     on('[data-act="justified"]', "change", el => change(["days", el.dataset.day, "justified"], el.checked ? undefined : false, `${short(el.dataset.day)}: trips given — justified ${el.checked ? "included" : "switched off"}`, el.dataset.day));
     on('[data-act="capby"]', "change", el => change(["days", el.dataset.day, "cap"], el.value === "shift" ? undefined : el.value, `${short(el.dataset.day)}: justified trips ${el.value === "none" ? "as reported (no cap)" : "capped per " + el.value}`, el.dataset.day));
@@ -287,6 +314,26 @@
     document.getElementById("b-dl").addEventListener("click", download);
     document.getElementById("b-save").addEventListener("click", save);
     document.getElementById("b-copy").addEventListener("click", copy);
+  }
+  function bindRecon() {
+    const g = document.getElementById("rec-gps"); if (g) g.addEventListener("change", () => { showGps = g.checked; render(); });
+    const b = document.getElementById("b-dl-rec"); if (b) b.addEventListener("click", downloadRecon);
+  }
+  async function downloadRecon() {
+    const days = sel();
+    if (!window.ExcelJS) { toast("The Excel library did not load. Check the connection and reload the page."); return; }
+    try {
+      const wb = X.buildReconWorkbook(window.ExcelJS, DATA, days, E, { gps: showGps });
+      const buf = await wb.xlsx.writeBuffer();
+      const name = `Trip_Reconciliation_NIT-185_${days.length > 1 ? short(days[0].day) + "-" + dmy(days[days.length - 1].day) : dmy(days[0].day)}${showGps ? "_INTERNAL" : ""}.xlsx`;
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      if (!caps.downloads) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+      else await caps.downloads.save({ filename: name, data: blob });
+      toast("Saved " + name);
+    } catch (e) {
+      if (e && e.code === "declined") return;
+      toast(e && e.code === "rate_limited" ? "A download is already waiting for your answer." : "The reconciliation download did not go through" + (e && e.code ? ` (${e.code})` : e && e.message ? `: ${e.message}` : "") + ".");
+    }
   }
   async function download() {
     const days = sel();
