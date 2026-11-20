@@ -18,7 +18,7 @@
   const C = { shift: 0, fleet: 1, reg: 2, trips: 3, lead: 4, sl: 5, noGps: 6, pts: 7, slab: 8 };
   const jrKey = (s, f) => s + "|" + f;
 
-  /* edits for one day: { justified: true|false, cap: "shift"|"day"|"none" (none: the trips reported, as they are), jr: {"A|AV 58": {slab, just, page}}, trips: {"No": {count: true|false, slab, remark}} } */
+  /* edits for one day: { jrDefault: "reported"|"low" (from the all-days setting, see editsFor), justified: true|false, cap: "shift"|"day"|"none" (none: the trips reported, as they are), jr: {"A|AV 58": {slab, just, page}}, trips: {"No": {count: true|false, slab, remark}} } */
   function computeDay(D, E) {
     E = E || {};
     const te = E.trips || {};
@@ -66,6 +66,9 @@
     const capDay = Math.max(0, repDay - gpsDay);
     const cap = capBy === "none" ? null : capBy === "day" ? capDay : Math.min(capDay, sum(SHIFTS.map(s => capShift[s])));   // per shift: the day limit holds as well
     const jre = E.jr || {};
+    // lead of trips given on justification (Aj 19.11.2026): "reported" = the slab of the contractor's reported lead for the tipper-shift
+    // (over 5 km in 4-5), "low" = 0-1 km; a row's own choice on the Justification Register wins.
+    const jrAuto = r => (E.jrDefault === "low" ? "0-1" : slab(r[C.lead]) || "0-1");
     let used = 0; const usedS = { A: 0, B: 0, C: 0 };
     const register = D.con.filter(r => r[C.noGps]).map((r, i) => {
       const k = jrKey(r[C.shift], r[C.fleet]); const e = jre[k] || {};
@@ -73,7 +76,7 @@
       const room = capBy === "none" ? Infinity : capBy === "day" ? capDay - used : Math.min(capShift[r[C.shift]] - usedS[r[C.shift]], capDay - used);
       const inc = on ? Math.max(0, Math.min(r[C.trips], room)) : 0; used += inc; usedS[r[C.shift]] += inc;
       return { sl: i + 1, key: k, shift: r[C.shift], fleet: r[C.fleet], reg: r[C.reg], reported: r[C.trips], gps: g, diff: r[C.trips] - g, included: inc,
-        slab: e.slab || "0-1", reason: `No GPS data from the device for the shift (${r[C.pts]} valid GPS points) — technical`, just: e.just || "", page: e.page || "" };
+        auto: jrAuto(r), slab: e.slab || jrAuto(r), reason: `No GPS data from the device for the shift (${r[C.pts]} valid GPS points) — technical`, just: e.just || "", page: e.page || "" };
     });
     const just = {}; SHIFTS.forEach(s => (just[s] = sum(register.filter(r => r.shift === s).map(r => r.included))));
 
@@ -150,26 +153,25 @@
   }
   function addRec(a, b) { const o = {}; for (const k of ["des", "und", "rep", "gps"]) o[k] = a[k].map((v, i) => v + b[k][i]); o.rem = {}; for (const k in b.rem) o.rem[k] = (a.rem[k] || 0) + b.rem[k]; return o; }
   const emptyRec = () => ({ des: RSL.map(() => 0), und: RSL.map(() => 0), rep: RSL.map(() => 0), gps: RSL.map(() => 0), rem: {} });
-  // Final after Reconciliation (Aj 19.11.2026, 02:21): the GPS hauls counted on the page, in the slab of the HAUL's lead (0-1 … 8-9; a trip
-  // whose slab was changed on the page keeps that slab). Trips reported for tipper-shifts with no GPS data are NOT in it (remark only).
+  // Final after Reconciliation (Aj 19.11.2026 12:10, supersedes 02:21): the same figures as the SOP Daily Report — GPS hauls on the haul lead
+  // plus trips given on justification (all-days switch / per-day switch, lead per the all-days setting), slabs 0-1 … 4-5 (NIT's highest).
   const rslab = x => (x === null || x === undefined || Number.isNaN(x) ? 0 : x <= 1 ? 0 : Math.min(RSL.length - 1, Math.ceil(x) - 1));
-  function reconFinal(D, r) {
-    const f = {}; SHIFTS.forEach(s => (f[s] = RSL.map(() => 0)));
-    for (const t of r.counted) { const auto = slab(t.lead); const i = t.slab && t.slab !== auto ? RSL.indexOf(t.slab) : rslab(t.lead); f[t.Shift][i < 0 ? 0 : i] += 1; }
+  function reconFinal(D, r) {   // = the SOP Daily Report's final by slab (Aj 19.11.2026 12:10): 0-1 … 4-5, over 5 km in 4-5; 5-6 … 8-9 stay 0
+    const f = {}; SHIFTS.forEach((s, i) => (f[s] = pad(r.B[i].slabs)));
     return f;
   }
   function reconDay(D, r) {
     if (!D.recon) return null;
     const f = reconFinal(D, r);
-    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], f[s], r.A[i].noGpsRep));
+    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], f[s], r.A[i].justified));
     const t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), emptyRec());
-    blocks.push(reconBlock("Day", t, RSL.map((_, i) => sum(SHIFTS.map(s => f[s][i]))), r.Atot.noGpsRep));
+    blocks.push(reconBlock("Day", t, RSL.map((_, i) => sum(SHIFTS.map(s => f[s][i]))), r.Atot.justified));
     return blocks;
   }
   function reconPeriod(list) {   // list of [D, r]: one total block over the days
     const ok = list.filter(([D]) => D.recon); if (!ok.length) return null;
     let t = emptyRec(), fin = RSL.map(() => 0), just = 0;
-    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); const f = reconFinal(D, r); SHIFTS.forEach(s => f[s].forEach((v, i) => (fin[i] += v))); just += r.Atot.noGpsRep; }
+    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); const f = reconFinal(D, r); SHIFTS.forEach(s => f[s].forEach((v, i) => (fin[i] += v))); just += r.Atot.justified; }
     return reconBlock("Total", t, fin, just);
   }
   function reconRemark(b) {
@@ -179,10 +181,45 @@
     if (m.split) p.push(`${m.split} VTS trip(s) were part of a haul already counted (haul split in two): counted once`);
     if (m.notHaul) p.push(`${m.notHaul} VTS trip(s) (${m.notHaulUnd || 0} undesignated) are short moves, not hauls: not counted`);
     if (m.noVts) p.push(`${m.noVts} haul(s) with no VTS trip: added`);
-    if (m.just) p.push(`${m.just} trip(s) reported for tipper-shifts with no GPS data (GPS not working / under maintenance): not in the final`);
+    if (m.just) p.push(`${m.just} trip(s) given on justification (no GPS data: GPS not working / under maintenance): see the Justification Register`);
     p.push(`Reported − Final: ${b.sums.rep - b.sums.fin}`);
     return p.join("; ");
   }
-  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C, RSL, reconDay, reconPeriod, reconRemark };
+  // all-days settings (Aj 19.11.2026): edits.global = { justified: false (switch off for every day), jrLead: "reported" (default) | "low" }.
+  // A day's own switch, when set, wins over the all-days one.
+  function editsFor(edits, day) {
+    const G = (edits && edits.global) || {}, d = ((edits && edits.days) || {})[day] || {};
+    const o = Object.assign({}, d, { jrDefault: G.jrLead || "reported" });
+    if (d.justified === undefined && G.justified === false) o.justified = false;
+    return o;
+  }
+  // ---------- tipper-wise: contractor reported against VTS trips, GPS hauls and the final (sheet "Over-reporting", Aj 19.11.2026)
+  function tipperRows(D, r) {
+    const key = (s, f) => s + "|" + f, M = new Map();
+    const get = (s, f) => { const k = key(s, f); if (!M.has(k)) M.set(k, { shift: s, fleet: f, reg: "", rep: 0, lead: null, des: 0, und: 0, gps: 0, just: 0 }); return M.get(k); };
+    for (const c of D.con) { const x = get(c[C.shift], c[C.fleet]); x.rep += c[C.trips]; x.lead = c[C.lead]; x.reg = c[C.reg] || x.reg; }
+    for (const t of r.counted) get(t.Shift, t.Fleet).gps += 1;
+    for (const g of r.register) get(g.shift, g.fleet).just += g.included;
+    const ts = (D.recon && D.recon.tippers) || {};
+    for (const k in ts) { const [s, f] = k.split("|"); const x = get(s, f); x.des += ts[k][0]; x.und += ts[k][1]; if (!x.reg) x.reg = ts[k][2] || ""; }
+    const rows = [...M.values()].map(x => Object.assign(x, { fin: x.gps + x.just, overGps: x.rep - x.gps, overFin: x.rep - x.gps - x.just }));
+    rows.sort((a, b) => (a.shift < b.shift ? -1 : a.shift > b.shift ? 1 : a.fleet.localeCompare(b.fleet, "en", { numeric: true })));
+    return rows;
+  }
+  // ---------- Clusters summary over the days shown (Aj 19.11.2026): patch → dump location by day, totals by day, position by day
+  const havM = (a, b) => { const r = Math.PI / 180, x = Math.sin((b[0] - a[0]) * r / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin((b[1] - a[1]) * r / 2) ** 2; return 2 * 6371000 * Math.asin(Math.sqrt(x)); };
+  function clusterSummary(days) {
+    const ds = days.filter(D => D.clusters).map(D => D.day), idx = new Map(ds.map((d, i) => [d, i])), z = () => ds.map(() => 0);
+    const route = new Map(), patch = new Map(), dump = new Map(), posL = new Map(), posT = new Map();
+    const bump = (M, k, i, n) => { if (!M.has(k)) M.set(k, z()); M.get(k)[i] += n; };
+    for (const D of days) { if (!D.clusters) continue; const i = idx.get(D.day);
+      for (const r of D.clusters.routes) { bump(route, (r.P || "?") + " → " + (r.Q || "?"), i, r.hauls); bump(patch, r.P || "?", i, r.hauls); bump(dump, r.Q || "?", i, r.hauls); }
+      for (const [M, kind] of [[posL, "loading"], [posT, "tipping"]]) for (const [k, v] of Object.entries((D.clusters.pos || {})[kind] || {})) {
+        if (k.startsWith("Scattered")) continue; if (!M.has(k)) M.set(k, ds.map(() => null)); M.get(k)[i] = v; } }
+    const rows = M => [...M.entries()].map(([k, a]) => ({ name: k, byDay: a, total: a.reduce((x, y) => x + y, 0) })).sort((a, b) => b.total - a.total);
+    const pos = M => [...M.entries()].map(([k, a]) => { const f = a.find(v => v); return { name: k, byDay: a.map(v => (v ? { lat: v[0], lng: v[1], hauls: v[2], moved: Math.round(havM(f, v)) } : null)) }; });
+    return { days: ds, routes: rows(route), patches: rows(patch), dumps: rows(dump), posL: pos(posL), posT: pos(posT) };
+  }
+  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C, RSL, reconDay, reconPeriod, reconRemark, editsFor, tipperRows, clusterSummary };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPCompute = api;
 })(typeof self !== "undefined" ? self : this);

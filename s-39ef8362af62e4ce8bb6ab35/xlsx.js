@@ -10,6 +10,9 @@
     { role: "OB In-charge", org: "Hingula OCP" },
     { role: "Mine Manager", org: "Hingula OCP" },
   ];
+  // reconciliation sheet (Aj 19.11.2026): the SOP's four, then HOD (Survey) and Project Officer
+  const RECON_EXTRA = [{ role: "HOD (Survey)", org: "Hingula OCP" }, { role: "Project Officer", org: "Hingula OCP" }];
+  const reconSign = edits => [...((edits && edits.sign && edits.sign.blocks) || DEFAULT_SIGN), ...RECON_EXTRA];
   const dmy = d => d.slice(8, 10) + "." + d.slice(5, 7) + "." + d.slice(0, 4);
   const ist = ms => { const d = new Date(ms + 19800000); const p = n => String(n).padStart(2, "0");
     return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`; };
@@ -141,7 +144,7 @@
   function buildWorkbook(ExcelJS, data, days, edits) {
     edits = edits || {}; const sign = { show: !(edits.sign && edits.sign.show === false), blocks: (edits.sign && edits.sign.blocks) || DEFAULT_SIGN };
     const wb = new ExcelJS.Workbook(); wb.creator = "Lead-wise SOP"; wb.created = new Date();
-    const res = days.map(D => [D, S.computeDay(D, (edits.days || {})[D.day])]);
+    const res = days.map(D => [D, S.computeDay(D, S.editsFor(edits, D.day))]);
     if (res.length > 1) {
       const ws = wb.addWorksheet("Month");
       line(ws, `MAHANADI COALFIELDS LIMITED — ${data.site} — ${data.nit} ${data.contractor}`, { bold: true, size: 13 });
@@ -180,6 +183,35 @@
     const N = S.N;
     table(wb, "Not counted", [...dh, "No", "Why", "Shift", "Tipper", "Leaves loading stop", "Arrives at the far end", "From", "To", "Odometer lead (km)"],
       res.flatMap(([D, r]) => r.notCounted.map(x => [...dcol(D), x[N.No], x[N.why], x[N.Shift], x[N.Fleet], ist(x[N.ld]), ist(x[N.tp]), x[N.from], x[N.to], x[N.lead]])), [...dw, 7, 34, 6, 8, 19, 19, 20, 20, 9], dw.length + 2);
+    // Over-reporting (Aj 19.11.2026): every tipper-shift — reported against VTS trips, GPS hauls, trips given on justification and the final
+    { const ws = table(wb, "Over-reporting", ["Date", "Shift", "Tipper", "Registration", "Reported trips", "Reported lead (km)", "VTS designated", "VTS undesignated", "GPS hauls", "Given — justified", "Final", "Reported − GPS hauls", "Reported − Final"],
+        res.flatMap(([D, r]) => S.tipperRows(D, r).map(x => [dmy(D.day), x.shift, x.fleet, x.reg, x.rep, x.lead === null ? null : +(+x.lead).toFixed(3), x.des, x.und, x.gps, x.just, x.fin, x.overGps, x.overFin])),
+        [11, 6, 9, 12, 9, 9, 9, 9, 9, 9, 9, 10, 10], 3);
+      ws.eachRow((row, i) => { if (i > 1 && row.getCell(13).value > 0) row.getCell(13).fill = YEL; if (i > 1 && row.getCell(12).value > 0) row.getCell(12).font = { bold: true }; });
+      const all = res.flatMap(([D, r]) => S.tipperRows(D, r)), sm = k => all.reduce((a, x) => a + x[k], 0);
+      ws.addRow([]); const t = ws.addRow(["TOTAL", null, null, null, sm("rep"), null, sm("des"), sm("und"), sm("gps"), sm("just"), sm("fin"), sm("overGps"), sm("overFin")]);
+      t.eachCell({ includeEmpty: true }, c => { c.font = { bold: true }; c.fill = TOT; });
+      ws.addRow(["Over reported (positive differences only): " + all.filter(x => x.overFin > 0).reduce((a, x) => a + x.overFin, 0) + " trips on " + all.filter(x => x.overFin > 0).length + " tipper-shifts against the final; " + all.filter(x => x.overGps > 0).reduce((a, x) => a + x.overGps, 0) + " against GPS hauls. VTS trips by start time; GPS hauls and the final as on the SOP."]); }
+    // Clusters (Aj 19.11.2026): every GPS haul's loading place and tipping place, as the Tampermonkey Actual Lead
+    { const cr = res.filter(([D]) => D.clusters);
+      if (cr.length) {
+        const Q = S.clusterSummary(cr.map(([D]) => D)), dh = Q.days.map(d => dmy(d).slice(0, 5));
+        const ws = wb.addWorksheet("Clusters — summary");
+        line(ws, `GPS hauls by patch and dump location, day-wise — ${dmy(Q.days[0])} to ${dmy(Q.days[Q.days.length - 1])}`, { bold: true, size: 12 });
+        line(ws, "A patch is one area of working (several faces); a dump location can hold several tipping places. Patches are kept by ground, not by terminal name (from 13.11 the single terminal \"NIT 185 OB FACE\" covers Kusumpal, Atlanta and Old WB); a patch moves with the work and keeps its name; \"New patch near …\" = a working away from every patch; \"Scattered\" = small places away from every patch.");
+        const block = (title, first, rows) => { add(ws, []); line(ws, title, { bold: true }); const r0 = add(ws, [first, ...dh, "Total"]);
+          rows.forEach(r => add(ws, [r.name, ...r.byDay.map(v => v || null), r.total]));
+          const r1 = add(ws, ["TOTAL", ...Q.days.map((_, i) => rows.reduce((a, r) => a + r.byDay[i], 0)), rows.reduce((a, r) => a + r.total, 0)]); grid(ws, r0, 1, r1, dh.length + 2, true); };
+        block("Patch → dump location", "Route", Q.routes); block("Patches (loading)", "Patch", Q.patches); block("Dump locations (tipping)", "Dump location", Q.dumps);
+        const posB = (title, rows) => { add(ws, []); line(ws, title, { bold: true }); const r0 = add(ws, ["Patch / location", ...dh]);
+          rows.forEach(r => add(ws, [r.name, ...r.byDay.map(v => (v ? v.moved : null))])); grid(ws, r0, 1, ws.rowCount, dh.length + 1, false); };
+        posB("Patch position — metres moved from its first day shown (centres: sheet Clusters — places)", Q.posL); posB("Dump location position — metres moved from its first day shown", Q.posT);
+        ws.getColumn(1).width = 58; for (let c = 2; c <= dh.length + 2; c++) ws.getColumn(c).width = 8; landscape(ws, false);
+        table(wb, "Clusters — routes", ["Date", "Loading place", "Tipping place", "GPS hauls", "Shift A", "Shift B", "Shift C", "Lead median (km)", "Lead min", "Lead max", "Portal formula median (km)", ...SL.map(x => "Slab " + x), "To check on the portal: tipper (registration), leaves loading → tip"],
+          cr.flatMap(([D]) => D.clusters.routes.map(x => [dmy(D.day), x.L + " [" + (x.P || "") + "]", x.D + " [" + (x.Q || "") + "]", x.hauls, ...x.sh, x.med, x.min, x.max, x.portal, ...x.slabs, (x.ex || []).join("; ")])), [11, 30, 30, 9, 7, 7, 7, 9, 8, 8, 10, 7, 7, 7, 7, 7, 90], 3);
+        table(wb, "Clusters — places", ["Date", "Kind", "Place", "Patch / dump location", "Latitude", "Longitude", "GPS hauls", "Shift A", "Shift B", "Shift C", "To check on the portal: tipper (registration), leaves loading → tip"],
+          cr.flatMap(([D]) => D.clusters.places.map(x => [dmy(D.day), x.kind, x.name, x.patch || "", x.lat, x.lng, x.hauls, ...x.sh, (x.ex || []).join("; ")])), [11, 9, 32, 44, 10, 10, 9, 7, 7, 7, 90], 3);
+      } }
     const log = (edits.log || []).filter(l => res.some(([D]) => D.day === l.day || !l.day));
     table(wb, "Changes", ["When", "Date", "Change"], log.map(l => [l.t, l.day ? dmy(l.day) : "all days", l.what]), [18, 11, 90]);
     const M = wb.addWorksheet("Method"); (data.method || "").split("\n").forEach(x => M.addRow([x]));
@@ -193,7 +225,7 @@
     opts = opts || {}; edits = edits || {};
     const wb = new ExcelJS.Workbook(); wb.creator = "Lead-wise SOP"; wb.created = new Date();
     const ws = wb.addWorksheet("Trip Reconciliation"), RSL = S.RSL, nS = RSL.length, cS = 6, cR = cS + nS;   // F … N slabs, O remarks
-    const res = days.map(D => [D, S.computeDay(D, (edits.days || {})[D.day])]).filter(([D]) => D.recon);
+    const res = days.map(D => [D, S.computeDay(D, S.editsFor(edits, D.day))]).filter(([D]) => D.recon);
     add(ws, ["Name of the Mine", "NIT-No. ", "Contractor", "Date/Shift", "Trips", "Lead Distance (in Km)", ...Array(nS - 1).fill(null), "Remarks"]);
     add(ws, [null, null, null, null, null, ...RSL, null]);
     ws.mergeCells(1, cS, 1, cS + nS - 1); [1, 2, 3, 4, 5, cR].forEach(c => ws.mergeCells(1, c, 2, c));
@@ -221,11 +253,12 @@
     for (const [D, r] of res) { const bl = S.reconDay(D, r); bl.forEach(b => block(b.label === "Day" ? `${dmy(D.day)} — Day` : `${dmy(D.day)} / ${b.label}`, b)); }
     if (res.length > 1) block(`${dmy(res[0][0].day)} to ${dmy(res[res.length - 1][0].day)} — Total`, S.reconPeriod(res));
     add(ws, []);
-    line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: the hauls on the GPS track in the slab of the haul's lead (HQ formula at the actual loading and tip places); trips reported for tipper-shifts with no GPS data are not in it.", { merge: cR, h: 60 });
+    line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: as on the SOP Daily Report — the hauls on the GPS track in the slab of the haul's lead (HQ formula at the actual loading and tip places; over 5 km in 4-5, the NIT's highest slab) plus trips given on justification for tipper-shifts with no GPS data (capped at the shift's reported − GPS hauls), in the slab chosen on the Justification Register.", { merge: cR, h: 60 });
+    if (!(edits.sign && edits.sign.show === false)) { add(ws, []); add(ws, []); signatures(ws, ws.rowCount + 1, cR, reconSign(edits)); }
     [16, 9, 20, 14, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w)); for (let i = 0; i < nS; i++) ws.getColumn(cS + i).width = 8; ws.getColumn(cR).width = 70;
     ws.views = [{ state: "frozen", ySplit: 2, xSplit: 5 }]; landscape(ws, false, "1:2");
     return wb;
   }
-  const api = { buildWorkbook, buildReconWorkbook, DEFAULT_SIGN, dmy, ist };
+  const api = { buildWorkbook, buildReconWorkbook, DEFAULT_SIGN, reconSign, dmy, ist };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPXlsx = api;
 })(typeof self !== "undefined" ? self : this);

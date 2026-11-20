@@ -59,7 +59,7 @@
   const sel = () => { const h = location.hash.replace("#", ""); const m = h.match(/^d-(\d{4}-\d{2}-\d{2})$/); return m && BYDAY[m[1]] ? [BYDAY[m[1]]] : DAYS; };
   const isAll = () => sel().length > 1;
   const dayE = d => E.days[d] || (E.days[d] = {});
-  const results = () => sel().map(D => [D, S.computeDay(D, E.days[D.day])]);
+  const results = () => sel().map(D => [D, S.computeDay(D, S.editsFor(E, D.day))]);
 
   // set a value at a path inside E, keep a log entry that can be undone
   function getAt(obj, path) { return path.reduce((o, k) => (o === undefined || o === null ? undefined : o[k]), obj); }
@@ -93,15 +93,18 @@
     h += restoreBanner();
     h += `<nav class="days" aria-label="Report day"><a href="#all" aria-current="${isAll()}"><b>All days</b><small>${DAYS.length} days, in date order</small></a>`;
     for (const D of DAYS) {
-      const r = S.computeDay(D, E.days[D.day]); const ed = E.log.some(l => l.day === D.day);
+      const r = S.computeDay(D, S.editsFor(E, D.day)); const ed = E.log.some(l => l.day === D.day);
       h += `<a href="#d-${D.day}" aria-current="${!isAll() && days[0].day === D.day}"><b>${short(D.day)}${ed ? ' <span class="pill edit" title="changed on this page">edited</span>' : ""}</b><small>${fmt(r.Atot.final)} final · ${fmt(r.Atot.diff)} short</small></a>`;
     }
     h += `</nav>`;
-    const tabs = [["sop", "SOP Daily Report"], ["rec", "Reconciliation"], ["just", "Justification Register"], ["trips", "Trips"], ["tw", "Tipper-wise"], ["rev", "For review"], ["nc", "Not counted"], ["sign", "Signatures"], ["chg", `Changes${nChanges ? " (" + nChanges + ")" : ""}`]];
+    const tabs = [["sop", "SOP Daily Report"], ["rec", "Reconciliation"], ["just", "Justification Register"], ["over", "Over-reporting"], ["clu", "Clusters"], ["trips", "Trips"], ["tw", "Tipper-wise"], ["rev", "For review"], ["nc", "Not counted"], ["sign", "Signatures"], ["chg", `Changes${nChanges ? " (" + nChanges + ")" : ""}`]];
     h += `<nav class="tabs" role="tablist">${tabs.map(([k, t]) => `<button role="tab" id="t-${k}" aria-selected="${tab === k}" data-tab="${k}">${t}</button>`).join("")}</nav>`;
+    if (["sop", "rec", "just"].includes(tab)) h += allDaysCard();
     if (tab === "sop") h += (isAll() ? monthCard(R) : "") + R.map(([D, r]) => sopCard(D, r)).join("");
     else if (tab === "rec") h += reconCard(R);
     else if (tab === "just") h += R.map(([D, r]) => justCard(D, r)).join("");
+    else if (tab === "over") h += overCard(R);
+    else if (tab === "clu") h += clusterSummaryCard(R) + R.map(([D]) => clusterCard(D)).join("");
     else if (tab === "trips") h += tripsCard(R);
     else if (tab === "tw") h += twCard(R);
     else if (tab === "rev") h += revCard(R, "rev");
@@ -119,13 +122,59 @@
   const head = cols => `<tr>${cols.map(c => `<th${c[1] ? ` class="${c[1]}"` : ""}>${esc(c[0] || c)}</th>`).join("")}</tr>`;
   const H = a => head(a.map(x => (Array.isArray(x) ? x : [x])));
 
+  // all-days settings for trips given on justification (Aj 19.11.2026): one switch and one lead for every day; a day's own switch wins
+  function allDaysCard() {
+    const G = E.global || {}, on = G.justified !== false, lead = G.jrLead || "reported";
+    const own = DAYS.filter(D => (E.days[D.day] || {}).justified !== undefined).map(D => short(D.day));
+    return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><h2>All days · trips given — justified (no GPS data)</h2>
+      <div class="actions"><label class="switch"><input type="checkbox" data-act="g-just" ${on ? "checked" : ""}> Include trips given — justified</label>
+      <label class="switch">Lead <select data-act="g-lead" aria-label="Lead of justified trips, all days"><option value="reported" ${lead === "reported" ? "selected" : ""}>Contractor reported slab</option><option value="low" ${lead === "low" ? "selected" : ""}>Lowest slab (0-1 km)</option></select></label></div></div>
+      <p class="note">Changes the SOP Daily Report, the Justification Register and the Reconciliation final of every day. A slab chosen on a row of the Justification Register stays.${own.length ? ` Days with their own switch set (it wins): ${own.join(", ")}.` : ""}</p></section>`;
+  }
+  // every tipper-shift: reported against VTS trips, GPS hauls, justified and the final (Aj 19.11.2026)
+  function overCard(R) {
+    let h = "", T = { rep: 0, des: 0, und: 0, gps: 0, just: 0, fin: 0, overGps: 0, overFin: 0 }, nOver = 0, sOver = 0;
+    for (const [D, r] of R) {
+      const rows = S.tipperRows(D, r); const t = { rep: 0, des: 0, und: 0, gps: 0, just: 0, fin: 0, overGps: 0, overFin: 0 };
+      const body = rows.map(x => { for (const k in t) t[k] += x[k]; if (x.overFin > 0) { nOver++; sOver += x.overFin; }
+        return `<tr ${x.overFin > 0 ? 'style="background:var(--edit)"' : ""}><td class="l">${x.shift}</td><td class="l">${esc(x.fleet)}</td><td class="l">${esc(x.reg)}</td><td>${fmt(x.rep)}</td><td>${x.lead == null ? "" : (+x.lead).toFixed(2)}</td><td>${fmt(x.des)}</td><td>${fmt(x.und)}</td><td>${fmt(x.gps)}</td><td>${fmt(x.just)}</td><td><b>${fmt(x.fin)}</b></td><td class="${x.overGps > 0 ? "miss" : ""}">${fmt(x.overGps)}</td><td class="${x.overFin > 0 ? "miss" : ""}"><b>${fmt(x.overFin)}</b></td></tr>`; }).join("");
+      for (const k in T) T[k] += t[k];
+      h += `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · Over-reporting, tipper-wise</h2><span class="note">${rows.filter(x => x.overFin > 0).length} tipper-shifts reported more than the final</span></div>
+        <div class="scroll"><table>${H([["Shift", "l"], ["Tipper", "l"], ["Registration", "l"], "Reported", "Reported lead (km)", "VTS designated", "VTS undesignated", "GPS hauls", "Given — justified", "Final", "Reported − GPS hauls", "Reported − Final"])}${body}
+        <tr class="tot"><td class="l" colspan="3">DAY TOTAL</td><td>${fmt(t.rep)}</td><td></td><td>${fmt(t.des)}</td><td>${fmt(t.und)}</td><td>${fmt(t.gps)}</td><td>${fmt(t.just)}</td><td>${fmt(t.fin)}</td><td>${fmt(t.overGps)}</td><td>${fmt(t.overFin)}</td></tr></table></div></section>`;
+    }
+    return `<section class="card"><h2>Over-reporting${R.length > 1 ? ` · ${dmy(R[0][0].day)} to ${dmy(R[R.length - 1][0].day)}` : ""}</h2><p class="note">Every tipper-shift: contractor reported against VTS trips (by start time), GPS hauls, trips given on justification and the final (as on the SOP). Highlighted: reported more than the final. Reported ${fmt(T.rep)} · GPS hauls ${fmt(T.gps)} · justified ${fmt(T.just)} · final ${fmt(T.fin)} · over the final ${fmt(sOver)} trips on ${fmt(nOver)} tipper-shifts. The Excel download has the same as sheet "Over-reporting".</p></section>` + h;
+  }
+  // patches and dump locations over the days shown, day-wise (Aj 19.11.2026)
+  function clusterSummaryCard(R) {
+    const Q = S.clusterSummary(R.map(([D]) => D)); if (!Q.days.length) return "";
+    const dh = Q.days.map(d => short(d));
+    const tbl = (title, first, rows) => `<h3>${title}</h3><div class="scroll"><table>${H([[first, "l"], ...dh, "Total"])}${rows.map(r => `<tr><td class="l">${esc(r.name)}</td>${r.byDay.map(v => `<td>${v ? fmt(v) : ""}</td>`).join("")}<td><b>${fmt(r.total)}</b></td></tr>`).join("")}
+      <tr class="tot"><td class="l">TOTAL</td>${Q.days.map((_, i) => `<td>${fmt(rows.reduce((a, r) => a + r.byDay[i], 0))}</td>`).join("")}<td>${fmt(rows.reduce((a, r) => a + r.total, 0))}</td></tr></table></div>`;
+    const pos = (title, rows) => `<h3>${title}</h3><div class="scroll"><table>${H([["Patch / location", "l"], ...dh])}${rows.map(r => `<tr><td class="l">${esc(r.name)}</td>${r.byDay.map(v => (v ? `<td title="${v.lat.toFixed(5)}, ${v.lng.toFixed(5)} · ${v.hauls} hauls">${v.moved} m</td>` : "<td></td>")).join("")}</tr>`).join("")}</table></div>`;
+    return `<section class="card"><h2>Clusters summary${Q.days.length > 1 ? ` · ${dmy(Q.days[0])} to ${dmy(Q.days[Q.days.length - 1])}` : ""} · GPS hauls by patch and dump location, day-wise</h2>
+      <p class="note">A patch is one area of working and can hold several faces (Face-1, Face-2 … in the day tables below); a dump location can hold several tipping places (Dump-1, Dump-2 …). Patches are kept by ground, not by terminal name: from 08.11 "OB_COAL FACE" and on 12.11 "OSL Face" load on Kusumpal ground, and from 13.11 the single terminal "NIT 185 OB FACE" covers Kusumpal, Atlanta and Old WB, so each place goes to the patch it lies in (within ${R[0][0].clusters ? R[0][0].clusters.join || 500 : 500} m of where that patch was the day before); a patch moves with the work and keeps its name. A working farther than that from every patch starts a "New patch near …" (with its first position); places of under 20 hauls farther than that are "Scattered".</p>
+      ${tbl("Patch → dump location", "Route", Q.routes)}${tbl("Patches (loading)", "Patch", Q.patches)}${tbl("Dump locations (tipping)", "Dump location", Q.dumps)}
+      ${pos("Patch position by day — distance moved from its first day shown (hover: centre, hauls)", Q.posL)}${pos("Dump location position by day — distance moved from its first day shown", Q.posT)}</section>`;
+  }
+  // loading places and tipping places of the GPS hauls (Aj 19.11.2026; cluster_data.py, as the Tampermonkey Actual Lead)
+  function clusterCard(D) {
+    const C2 = D.clusters; if (!C2) return `<section class="card"><h2>${dmy(D.day)} · Clusters</h2><p class="note">No cluster data for this day.</p></section>`;
+    const pl = k => C2.places.filter(p => p.kind === k).map(p => `<tr><td class="l">${esc(p.name)}</td><td class="l">${esc(p.patch || "")}</td><td>${fmt(p.hauls)}</td>${p.sh.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</td><td class="l note" style="white-space:nowrap">${(p.ex || []).map(esc).join("<br>")}</td></tr>`).join("");
+    const rt = C2.routes.map(x => `<tr><td class="l">${esc(x.P || "")}</td><td class="l">${esc(x.L)}</td><td class="l">${esc(x.Q || "")}</td><td class="l">${esc(x.D)}</td><td><b>${fmt(x.hauls)}</b></td>${x.sh.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${x.med == null ? "" : x.med.toFixed(3)}</td><td>${x.min == null ? "" : x.min.toFixed(2)}–${x.max == null ? "" : x.max.toFixed(2)}</td><td>${x.portal == null ? "" : x.portal.toFixed(3)}</td>${x.slabs.map(v => `<td>${v ? fmt(v) : ""}</td>`).join("")}<td class="l note" style="white-space:nowrap">${(x.ex || []).map(esc).join("<br>")}</td></tr>`).join("");
+    return `<section class="card daycard"><div class="head"><h2>${dmy(D.day)} · Clusters: loading place → tipping place</h2><span class="note">${fmt(C2.hauls)} GPS hauls, each with one loading place (within ${C2.radius.loading} m) and one tipping place (within ${C2.radius.tipping} m)</span></div>
+      <div class="scroll"><table>${H([["Patch", "l"], ["Loading place", "l"], ["Dump location", "l"], ["Tipping place", "l"], "GPS hauls", "A", "B", "C", "Lead median (km)", "Lead range", "Portal formula median (km)", ...SL, ["To check on the portal: tipper, leaves loading → tip", "l"]])}${rt}</table></div>
+      <div class="row" style="gap:16px;align-items:flex-start;flex-wrap:wrap"><div class="scroll"><table>${H([["Loading place", "l"], ["Patch", "l"], "Hauls", "A", "B", "C", "Centre", ["To check", "l"]])}${pl("loading")}</table></div>
+      <div class="scroll"><table>${H([["Tipping place", "l"], ["Dump location", "l"], "Hauls", "A", "B", "C", "Centre", ["To check", "l"]])}${pl("tipping")}</table></div></div>
+      <p class="note">Places are found from the hauls themselves (the tipper's GPS point on leaving the loading stop and at the tip), not from the terminals: a terminal can hold several loading or tipping places (Face-1, Face-2 …, Dump-1, Dump-2 …, largest first). Named after the terminal most of its hauls load or tip in; "Outside terminals" when outside every terminal. Lead = the haul lead of the SOP; portal formula = the portal's way, rebuilt at its terminal boundaries. To check: up to three hauls (first, middle and last of the day) — open that tipper on the portal's History page around those times to see where it loaded and tipped.</p></section>`;
+  }
   // contractor's Trip Reconciliation format (Ajantha, 18.11.2026) — see compute.js reconDay
   function reconCard(R) {
     const RSL = S.RSL, ok = R.filter(([D]) => D.recon);
     const top = `<section class="card"><div class="row" style="justify-content:space-between"><h2>Trip Reconciliation — contractor's format</h2>
       <div class="actions"><label class="switch" style="font-weight:500"><input type="checkbox" id="rec-gps" ${showGps ? "checked" : ""}> Show GPS hauls (internal — not for sending)</label>
       <button class="primary" id="b-dl-rec">Download reconciliation · ${R.length > 1 ? "all days" : short(R[0][0].day)}${showGps ? " (with GPS hauls)" : ""}</button></div></div>
-      <p class="note">${esc(DATA.site)} · ${esc(DATA.nit)} · ${esc(DATA.contractor)}. Designated / Undesignated: the VTS portal's trips on the portal's own lead (NIT lead report), shift by trip start. Contractor Reported: each tipper-shift in the slab of its reported lead. % Deviation w.r.t Reported = (Reported − Total) × 100 ÷ Total. Final after Reconciliation: the hauls on the GPS track, in the slab of the haul's lead; trips reported for tipper-shifts with no GPS data are not in it (remark only). Changes made on this page carry through. Slab: lower &lt; lead ≤ upper.</p>
+      <p class="note">${esc(DATA.site)} · ${esc(DATA.nit)} · ${esc(DATA.contractor)}. Designated / Undesignated: the VTS portal's trips on the portal's own lead (NIT lead report), shift by trip start. Contractor Reported: each tipper-shift in the slab of its reported lead. % Deviation w.r.t Reported = (Reported − Total) × 100 ÷ Total. Final after Reconciliation: the SOP Daily Report's final — GPS hauls in the slab of the haul's lead (over 5 km in 4-5, the NIT's highest slab) plus trips given on justification (settings above), so changes made on this page carry through. Slab: lower &lt; lead ≤ upper.</p>
       ${ok.length < R.length ? `<p class="note">No VTS Trip List for: ${R.filter(([D]) => !D.recon).map(([D]) => dmy(D.day)).join(", ")}.</p>` : ""}</section>`;
     const rowsOf = b => {
       const L = [["Designated", b.des, ""], ["Undesignated", b.und, ""], ["Total Designated + Undesignated", b.tot, "tot"], ["Contractor Reported", b.rep, ""],
@@ -142,6 +191,7 @@
     let h = top;
     if (ok.length > 1) h += table(`Total ${dmy(ok[0][0].day)} to ${dmy(ok[ok.length - 1][0].day)}`, [S.reconPeriod(ok)]);
     for (const [D, r] of ok) h += table(dmy(D.day), S.reconDay(D, r));
+    if (E.sign.show) h += `<section class="card"><h2>Signatures</h2><div class="sigs">${X.reconSign(E).map(b => `<div class="sig"><div class="line">Signature · Name · Date</div><div class="role">${esc(b.role)}</div><div class="org">${esc(b.org)}</div></div>`).join("")}</div></section>`;
     return h;
   }
   function monthCard(R) {
@@ -185,7 +235,7 @@
     const rows = r.register.map(j => {
       const ed = (E.days[D.day] || {}).jr && E.days[D.day].jr[j.key];
       return `<tr class="${ed ? "edited" : ""}"><td>${j.sl}</td><td class="l">${j.shift}</td><td class="l">${esc(j.fleet)}</td><td class="l">${esc(j.reg || "")}</td><td>${fmt(j.reported)}</td><td>${fmt(j.gps)}</td><td>${fmt(j.diff)}</td><td><b>${fmt(j.included)}</b></td>
-        <td><select class="slab" aria-label="Slab for ${esc(j.fleet)} shift ${j.shift}" data-act="jr-slab" data-day="${D.day}" data-key="${esc(j.key)}">${SL.map(s => `<option ${s === j.slab ? "selected" : ""}>${s}</option>`).join("")}</select></td>
+        <td><select class="slab" aria-label="Slab for ${esc(j.fleet)} shift ${j.shift}" data-act="jr-slab" data-day="${D.day}" data-key="${esc(j.key)}" data-auto="${j.auto}">${SL.map(s => `<option ${s === j.slab ? "selected" : ""}>${s}</option>`).join("")}</select></td>
         <td class="l note">${esc(j.reason)}</td><td><input type="text" aria-label="Justification" data-act="jr-just" data-day="${D.day}" data-key="${esc(j.key)}" value="${esc(j.just)}" placeholder="Write the justification"></td>
         <td><input type="text" aria-label="Bound register page" style="min-width:70px" data-act="jr-page" data-day="${D.day}" data-key="${esc(j.key)}" value="${esc(j.page)}" placeholder="Page"></td></tr>`;
     }).join("");
@@ -283,9 +333,11 @@
     }
     app.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { tab = b.dataset.tab; page = 0; render(); })); bindRecon();
     const on = (sel, ev, fn) => app.querySelectorAll(sel).forEach(el => el.addEventListener(ev, () => fn(el)));
+    on('[data-act="g-just"]', "change", el => change(["global", "justified"], el.checked ? undefined : false, `All days: trips given — justified ${el.checked ? "included" : "switched off"}`));
+    on('[data-act="g-lead"]', "change", el => change(["global", "jrLead"], el.value === "reported" ? undefined : el.value, `All days: justified trips in ${el.value === "low" ? "the lowest slab (0-1 km)" : "the contractor's reported slab"}`));
     on('[data-act="justified"]', "change", el => change(["days", el.dataset.day, "justified"], el.checked ? undefined : false, `${short(el.dataset.day)}: trips given — justified ${el.checked ? "included" : "switched off"}`, el.dataset.day));
     on('[data-act="capby"]', "change", el => change(["days", el.dataset.day, "cap"], el.value === "shift" ? undefined : el.value, `${short(el.dataset.day)}: justified trips ${el.value === "none" ? "as reported (no cap)" : "capped per " + el.value}`, el.dataset.day));
-    on('[data-act="jr-slab"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "slab"], el.value === "0-1" ? undefined : el.value, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: justified trips in slab ${el.value}`, el.dataset.day));
+    on('[data-act="jr-slab"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "slab"], el.value === el.dataset.auto ? undefined : el.value, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: justified trips in slab ${el.value}`, el.dataset.day));
     on('[data-act="jr-just"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "just"], el.value.trim() || undefined, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: justification “${el.value.trim()}”`, el.dataset.day));
     on('[data-act="jr-page"]', "change", el => change(["days", el.dataset.day, "jr", el.dataset.key, "page"], el.value.trim() || undefined, `${el.dataset.key.split("|")[1]} shift ${el.dataset.key.split("|")[0]}: bound register page ${el.value.trim()}`, el.dataset.day));
     on('[data-act="trip-slab"]', "change", el => {
