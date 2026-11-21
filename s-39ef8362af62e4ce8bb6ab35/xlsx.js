@@ -250,11 +250,16 @@
       [1, 2, 3, 4, cR].forEach(c => { ws.mergeCells(r0, c, r1, c); ws.getCell(r0, c).alignment = { vertical: "middle", horizontal: c === cR ? "left" : "center", wrapText: true }; });
       for (let r = r0; r <= r1; r++) for (let c = 1; c <= cR; c++) ws.getCell(r, c).border = BOX;
     };
-    for (const [D, r] of res) { const bl = S.reconDay(D, r); bl.forEach(b => block(b.label === "Day" ? `${dmy(D.day)} — Day` : `${dmy(D.day)} / ${b.label}`, b)); }
+    const signOn = !(edits.sign && edits.sign.show === false);
+    res.forEach(([D, r], k) => {
+      const bl = S.reconDay(D, r); bl.forEach(b => block(b.label === "Day" ? `${dmy(D.day)} — Day` : `${dmy(D.day)} / ${b.label}`, b));
+      if (signOn) { add(ws, []); add(ws, []); const e = signatures(ws, ws.rowCount + 1, cR, reconSign(edits)); add(ws, []);   // signature block after each date
+        if (res.length > 1) ws.getRow(e).addPageBreak(); }                                                               // each date prints on its own page
+    });
     if (res.length > 1) block(`${dmy(res[0][0].day)} to ${dmy(res[res.length - 1][0].day)} — Total`, S.reconPeriod(res));
     add(ws, []);
     line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: as on the SOP Daily Report — the hauls on the GPS track in the slab of the haul's lead (HQ formula at the actual loading and tip places; over 5 km in 4-5, the NIT's highest slab) plus trips given on justification for tipper-shifts with no GPS data (capped at the shift's reported − GPS hauls), in the slab chosen on the Justification Register.", { merge: cR, h: 60 });
-    if (!(edits.sign && edits.sign.show === false)) { add(ws, []); add(ws, []); signatures(ws, ws.rowCount + 1, cR, reconSign(edits)); }
+    if (signOn && res.length > 1) { add(ws, []); add(ws, []); signatures(ws, ws.rowCount + 1, cR, reconSign(edits)); }   // and after the period total
     [16, 9, 20, 14, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w)); for (let i = 0; i < nS; i++) ws.getColumn(cS + i).width = 8; ws.getColumn(cR).width = 70;
     ws.views = [{ state: "frozen", ySplit: 2, xSplit: 5 }]; landscape(ws, false, "1:2");
     return wb;

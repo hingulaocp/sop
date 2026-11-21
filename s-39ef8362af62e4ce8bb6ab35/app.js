@@ -186,12 +186,12 @@
       let body = "";
       for (const b of blocks) { const L = rowsOf(b);
         L.forEach(([lab, v, cls], k) => { body += `<tr class="${cls === "tot" ? "tot" : ""}" ${cls === "gps" ? 'style="background:var(--edit)"' : ""}>${k === 0 ? `<td class="l" rowspan="${L.length}"><b>${esc(b.label === "Day" ? "Day" : b.label === "Total" ? "Total" : "Shift " + b.label)}</b></td>` : ""}<td class="l">${lab}</td>${v.map(x => `<td>${typeof x === "string" ? x : fmt(x)}</td>`).join("")}${k === 0 ? `<td class="l note" rowspan="${L.length}" style="min-width:300px">${esc(S.reconRemark(b))}</td>` : ""}</tr>`; }); }
-      return `<section class="card"><h2>${title}</h2><div class="scroll"><table>${H([["Date/Shift", "l"], ["Trips", "l"], ...RSL, ["Remarks", "l"]])}${body}</table></div></section>`;
+      return `<section class="card"><h2>${title}</h2><div class="scroll"><table>${H([["Date/Shift", "l"], ["Trips", "l"], ...RSL, ["Remarks", "l"]])}${body}</table></div>${E.sign.show ? recSig : ""}</section>`;
     };
+    const recSig = `<div class="sigs" style="margin-top:18px">${X.reconSign(E).map(b => `<div class="sig"><div class="line">Signature · Name · Date</div><div class="role">${esc(b.role)}</div><div class="org">${esc(b.org)}</div></div>`).join("")}</div>`;
     let h = top;
     if (ok.length > 1) h += table(`Total ${dmy(ok[0][0].day)} to ${dmy(ok[ok.length - 1][0].day)}`, [S.reconPeriod(ok)]);
     for (const [D, r] of ok) h += table(dmy(D.day), S.reconDay(D, r));
-    if (E.sign.show) h += `<section class="card"><h2>Signatures</h2><div class="sigs">${X.reconSign(E).map(b => `<div class="sig"><div class="line">Signature · Name · Date</div><div class="role">${esc(b.role)}</div><div class="org">${esc(b.org)}</div></div>`).join("")}</div></section>`;
     return h;
   }
   function monthCard(R) {
@@ -302,7 +302,7 @@
     const bl = E.sign.blocks.map((b, i) => `<div class="sig"><label class="muted" for="sr-${i}">Role</label><input type="text" id="sr-${i}" data-act="sig-role" data-i="${i}" value="${esc(b.role)}">
       <label class="muted" for="so-${i}">Place / firm</label><input type="text" id="so-${i}" data-act="sig-org" data-i="${i}" value="${esc(b.org)}"><button data-act="sig-del" data-i="${i}">Remove this block</button></div>`).join("");
     return `<section class="card"><h2>Signatures</h2>
-      <label class="switch"><input type="checkbox" data-act="sig-show" ${E.sign.show ? "checked" : ""}> Print signature blocks on the SOP Daily Report and the Justification Register</label>
+      <label class="switch"><input type="checkbox" data-act="sig-show" ${E.sign.show ? "checked" : ""}> Print signature blocks on the SOP Daily Report, the Justification Register and the Reconciliation (after each date)</label>
       <p class="note">These blocks are used on every day and in the download. Names and dates are left blank, to be written by hand.</p>
       <div class="sigs">${bl}</div><div class="row"><button data-act="sig-add">Add a block</button><button data-act="sig-reset">Back to the SOP's four</button></div></section>`;
   }
