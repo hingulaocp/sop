@@ -142,9 +142,13 @@
   // Designated / Undesignated: the portal's trips on the portal's own lead (VTS = nitReport), shift by start time; Contractor Reported: each
   // tipper-shift in the slab of its reported lead; % Deviation w.r.t Reported: the contractor's formula (Reported − Total) × 100 ÷ Total,
   // "–" where Total is 0; Final after Reconciliation: reconFinal below; GPS hauls: internal only. Remarks say how VTS trips turn into the final.
-  const RSL = ["0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "8-9"];
+  // Aj 21.11.2026: slabs 5-6 … 8-9 removed — the NIT's slabs only, any trip over 5 km in 4-5
+  const RSL = ["0-1", "1-2", "2-3", "3-4", "4-5"];
+  const RECON_HEAD = { mine: "Hingula OCP, Hingula Area", nit: "NIT-185", contractor: "Ajantha BLAPPL(JV)" };   // Aj 21.11.2026
+  const fold = a => RSL.map((_, i) => (i < RSL.length - 1 ? (a && a[i]) || 0 : ((a && a.slice(i)) || []).reduce((x, y) => x + (y || 0), 0)));
+  const norm = x => ({ des: fold(x.des), und: fold(x.und), rep: fold(x.rep), gps: fold(x.gps), rem: x.rem || {} });
   const sum = a => a.reduce((x, y) => x + y, 0);
-  const pad = a => RSL.map((_, i) => a[i] || 0);
+  const pad = fold;
   const dev = (rep, tot) => (tot ? Math.round((rep - tot) * 100 / tot * 100) / 100 : null);
   function reconBlock(label, x, fin, just) {
     const tot = x.des.map((v, i) => v + x.und[i]);
@@ -156,22 +160,22 @@
   // Final after Reconciliation (Aj 19.11.2026 12:10, supersedes 02:21): the same figures as the SOP Daily Report — GPS hauls on the haul lead
   // plus trips given on justification (all-days switch / per-day switch, lead per the all-days setting), slabs 0-1 … 4-5 (NIT's highest).
   const rslab = x => (x === null || x === undefined || Number.isNaN(x) ? 0 : x <= 1 ? 0 : Math.min(RSL.length - 1, Math.ceil(x) - 1));
-  function reconFinal(D, r) {   // = the SOP Daily Report's final by slab (Aj 19.11.2026 12:10): 0-1 … 4-5, over 5 km in 4-5; 5-6 … 8-9 stay 0
+  function reconFinal(D, r) {   // = the SOP Daily Report's final by slab (Aj 19.11.2026 12:10): 0-1 … 4-5, over 5 km in 4-5
     const f = {}; SHIFTS.forEach((s, i) => (f[s] = pad(r.B[i].slabs)));
     return f;
   }
   function reconDay(D, r) {
     if (!D.recon) return null;
     const f = reconFinal(D, r);
-    const blocks = SHIFTS.map((s, i) => reconBlock(s, D.recon.shifts[s], f[s], r.A[i].justified));
-    const t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), emptyRec());
+    const blocks = SHIFTS.map((s, i) => reconBlock(s, norm(D.recon.shifts[s]), f[s], r.A[i].justified));
+    const t = SHIFTS.reduce((a, s) => addRec(a, norm(D.recon.shifts[s])), emptyRec());
     blocks.push(reconBlock("Day", t, RSL.map((_, i) => sum(SHIFTS.map(s => f[s][i]))), r.Atot.justified));
     return blocks;
   }
   function reconPeriod(list) {   // list of [D, r]: one total block over the days
     const ok = list.filter(([D]) => D.recon); if (!ok.length) return null;
     let t = emptyRec(), fin = RSL.map(() => 0), just = 0;
-    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, D.recon.shifts[s]), t); const f = reconFinal(D, r); SHIFTS.forEach(s => f[s].forEach((v, i) => (fin[i] += v))); just += r.Atot.justified; }
+    for (const [D, r] of ok) { t = SHIFTS.reduce((a, s) => addRec(a, norm(D.recon.shifts[s])), t); const f = reconFinal(D, r); SHIFTS.forEach(s => f[s].forEach((v, i) => (fin[i] += v))); just += r.Atot.justified; }
     return reconBlock("Total", t, fin, just);
   }
   function reconRemark(b) {
@@ -220,6 +224,6 @@
     const pos = M => [...M.entries()].map(([k, a]) => { const f = a.find(v => v); return { name: k, byDay: a.map(v => (v ? { lat: v[0], lng: v[1], hauls: v[2], moved: Math.round(havM(f, v)) } : null)) }; });
     return { days: ds, routes: rows(route), patches: rows(patch), dumps: rows(dump), posL: pos(posL), posT: pos(posT) };
   }
-  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C, RSL, reconDay, reconPeriod, reconRemark, editsFor, tipperRows, clusterSummary };
+  const api = { SL, SH, SHIFTS, slab, computeDay, jrKey, T, R, N, C, RSL, RECON_HEAD, reconDay, reconPeriod, reconRemark, editsFor, tipperRows, clusterSummary };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SOPCompute = api;
 })(typeof self !== "undefined" ? self : this);

@@ -245,7 +245,7 @@
         if (lab.startsWith("GPS")) for (let c = 5; c < cR; c++) ws.getCell(r, c).fill = YEL;
       });
       const r1 = r0 + rows.length - 1;
-      ws.getCell(r0, 1).value = data.site; ws.getCell(r0, 2).value = data.nit; ws.getCell(r0, 3).value = data.contractor; ws.getCell(r0, 4).value = dateTxt;
+      ws.getCell(r0, 1).value = S.RECON_HEAD.mine; ws.getCell(r0, 2).value = S.RECON_HEAD.nit; ws.getCell(r0, 3).value = S.RECON_HEAD.contractor; ws.getCell(r0, 4).value = dateTxt;
       ws.getCell(r0, cR).value = S.reconRemark(b);
       [1, 2, 3, 4, cR].forEach(c => { ws.mergeCells(r0, c, r1, c); ws.getCell(r0, c).alignment = { vertical: "middle", horizontal: c === cR ? "left" : "center", wrapText: true }; });
       for (let r = r0; r <= r1; r++) for (let c = 1; c <= cR; c++) ws.getCell(r, c).border = BOX;
@@ -258,9 +258,9 @@
     });
     if (res.length > 1) block(`${dmy(res[0][0].day)} to ${dmy(res[res.length - 1][0].day)} — Total`, S.reconPeriod(res));
     add(ws, []);
-    line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: as on the SOP Daily Report — the hauls on the GPS track in the slab of the haul's lead (HQ formula at the actual loading and tip places; over 5 km in 4-5, the NIT's highest slab) plus trips given on justification for tipper-shifts with no GPS data (capped at the shift's reported − GPS hauls), in the slab chosen on the Justification Register.", { merge: cR, h: 60 });
+    line(ws, "Designated / Undesignated: the VTS portal's trips of the NIT on the portal's own lead (Trip Management / NIT lead report), shift by trip start. Contractor Reported: each tipper-shift's trips in the slab of its reported lead. Slab: lower < lead ≤ upper; any trip over 5 km is in 4-5, the NIT's highest slab. % Deviation w.r.t Reported = (Contractor Reported − Total) × 100 ÷ Total; \"-\" where the Total is 0. Final after Reconciliation: as on the SOP Daily Report — the hauls on the GPS track in the slab of the haul's lead (HQ formula at the actual loading and tip places; over 5 km in 4-5, the NIT's highest slab) plus trips given on justification for tipper-shifts with no GPS data (capped at the shift's reported − GPS hauls), in the slab chosen on the Justification Register.", { merge: cR, h: 60 });
     if (signOn && res.length > 1) { add(ws, []); add(ws, []); signatures(ws, ws.rowCount + 1, cR, reconSign(edits)); }   // and after the period total
-    [16, 9, 20, 14, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w)); for (let i = 0; i < nS; i++) ws.getColumn(cS + i).width = 8; ws.getColumn(cR).width = 70;
+    [18, 10, 20, 14, 30].forEach((w, i) => (ws.getColumn(i + 1).width = w)); for (let i = 0; i < nS; i++) ws.getColumn(cS + i).width = 8; ws.getColumn(cR).width = 70;
     ws.views = [{ state: "frozen", ySplit: 2, xSplit: 5 }]; landscape(ws, false, "1:2");
     return wb;
   }

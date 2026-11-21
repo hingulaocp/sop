@@ -174,7 +174,8 @@
     const top = `<section class="card"><div class="row" style="justify-content:space-between"><h2>Trip Reconciliation — contractor's format</h2>
       <div class="actions"><label class="switch" style="font-weight:500"><input type="checkbox" id="rec-gps" ${showGps ? "checked" : ""}> Show GPS hauls (internal — not for sending)</label>
       <button class="primary" id="b-dl-rec">Download reconciliation · ${R.length > 1 ? "all days" : short(R[0][0].day)}${showGps ? " (with GPS hauls)" : ""}</button></div></div>
-      <p class="note">${esc(DATA.site)} · ${esc(DATA.nit)} · ${esc(DATA.contractor)}. Designated / Undesignated: the VTS portal's trips on the portal's own lead (NIT lead report), shift by trip start. Contractor Reported: each tipper-shift in the slab of its reported lead. % Deviation w.r.t Reported = (Reported − Total) × 100 ÷ Total. Final after Reconciliation: the SOP Daily Report's final — GPS hauls in the slab of the haul's lead (over 5 km in 4-5, the NIT's highest slab) plus trips given on justification (settings above), so changes made on this page carry through. Slab: lower &lt; lead ≤ upper.</p>
+      <p><b>Name of the Mine:</b> ${esc(S.RECON_HEAD.mine)} &nbsp;·&nbsp; <b>NIT-No.:</b> ${esc(S.RECON_HEAD.nit)} &nbsp;·&nbsp; <b>Contractor:</b> ${esc(S.RECON_HEAD.contractor)}</p>
+      <p class="note">Designated / Undesignated: the VTS portal's trips on the portal's own lead (NIT lead report), shift by trip start. Contractor Reported: each tipper-shift in the slab of its reported lead. % Deviation w.r.t Reported = (Reported − Total) × 100 ÷ Total. Final after Reconciliation: the SOP Daily Report's final — GPS hauls in the slab of the haul's lead (over 5 km in 4-5, the NIT's highest slab — for Designated, Undesignated and Contractor Reported too) plus trips given on justification (settings above), so changes made on this page carry through. Slab: lower &lt; lead ≤ upper.</p>
       ${ok.length < R.length ? `<p class="note">No VTS Trip List for: ${R.filter(([D]) => !D.recon).map(([D]) => dmy(D.day)).join(", ")}.</p>` : ""}</section>`;
     const rowsOf = b => {
       const L = [["Designated", b.des, ""], ["Undesignated", b.und, ""], ["Total Designated + Undesignated", b.tot, "tot"], ["Contractor Reported", b.rep, ""],
@@ -186,7 +187,7 @@
       let body = "";
       for (const b of blocks) { const L = rowsOf(b);
         L.forEach(([lab, v, cls], k) => { body += `<tr class="${cls === "tot" ? "tot" : ""}" ${cls === "gps" ? 'style="background:var(--edit)"' : ""}>${k === 0 ? `<td class="l" rowspan="${L.length}"><b>${esc(b.label === "Day" ? "Day" : b.label === "Total" ? "Total" : "Shift " + b.label)}</b></td>` : ""}<td class="l">${lab}</td>${v.map(x => `<td>${typeof x === "string" ? x : fmt(x)}</td>`).join("")}${k === 0 ? `<td class="l note" rowspan="${L.length}" style="min-width:300px">${esc(S.reconRemark(b))}</td>` : ""}</tr>`; }); }
-      return `<section class="card"><h2>${title}</h2><div class="scroll"><table>${H([["Date/Shift", "l"], ["Trips", "l"], ...RSL, ["Remarks", "l"]])}${body}</table></div>${E.sign.show ? recSig : ""}</section>`;
+      return `<section class="card"><h2>${title}</h2><p class="note">${esc(S.RECON_HEAD.mine)} · ${esc(S.RECON_HEAD.nit)} · ${esc(S.RECON_HEAD.contractor)}</p><div class="scroll"><table>${H([["Date/Shift", "l"], ["Trips", "l"], ...RSL, ["Remarks", "l"]])}${body}</table></div>${E.sign.show ? recSig : ""}</section>`;
     };
     const recSig = `<div class="sigs" style="margin-top:18px">${X.reconSign(E).map(b => `<div class="sig"><div class="line">Signature · Name · Date</div><div class="role">${esc(b.role)}</div><div class="org">${esc(b.org)}</div></div>`).join("")}</div>`;
     let h = top;
